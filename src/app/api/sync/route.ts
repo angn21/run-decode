@@ -4,7 +4,7 @@ import { seedAthleteFromEnv, syncActivities } from "@/lib/strava";
 
 export async function POST() {
   let athlete = await getCurrentAthlete();
-  if (!athlete) {
+  if (!athlete && !process.env.VERCEL) {
     athlete = await seedAthleteFromEnv();
   }
 

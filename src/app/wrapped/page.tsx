@@ -16,7 +16,7 @@ export default async function WrappedPage({
 
   const athlete = await getCurrentAthlete();
   const activities = athlete
-    ? (getActivitiesForAthlete(athlete.id, 200) as ActivityRow[])
+    ? ((await getActivitiesForAthlete(athlete.id, 200)) as ActivityRow[])
     : [];
 
   const stats = computeWrapped(activities, period);

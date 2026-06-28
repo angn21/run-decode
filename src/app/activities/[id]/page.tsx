@@ -4,13 +4,14 @@ import { Nav } from "@/components/Nav";
 import { PaceDecoderView } from "@/components/PaceDecoderView";
 import { getCurrentAthlete } from "@/lib/session";
 import {
+  fetchActivityDetail,
   fetchActivityStreams,
-  getActivityByStravaId,
+  getActivityForAthlete,
+  saveActivity,
   saveInsights,
   saveStreams,
 } from "@/lib/strava";
 import { decodeActivity } from "@/lib/decoder";
-import type { ActivityRow } from "@/lib/db";
 import type { StravaStreams } from "@/lib/strava";
 import { speedToPace, secondsToDuration } from "@/lib/format";
 import { formatInRunTimezone } from "@/lib/timezone";
@@ -25,8 +26,18 @@ export default async function ActivityPage({
   const athlete = await getCurrentAthlete();
   if (!athlete) notFound();
 
-  const activity = getActivityByStravaId(stravaId) as ActivityRow | undefined;
-  if (!activity) notFound();
+  let activity = await getActivityForAthlete(stravaId, athlete.id);
+  if (!activity) {
+    try {
+      const stravaActivity = await fetchActivityDetail(athlete, stravaId);
+      await saveActivity(athlete.id, stravaActivity);
+      activity = await getActivityForAthlete(stravaId, athlete.id);
+    } catch {
+      notFound();
+    }
+  }
+
+  if (!activity || activity.athlete_id !== athlete.id) notFound();
 
   let streams: StravaStreams | null = null;
   if (activity.streams_json) {
@@ -34,7 +45,7 @@ export default async function ActivityPage({
   } else {
     try {
       streams = await fetchActivityStreams(athlete, stravaId);
-      saveStreams(stravaId, streams);
+      await saveStreams(stravaId, streams);
     } catch {
       streams = null;
     }
@@ -45,7 +56,7 @@ export default async function ActivityPage({
     result = JSON.parse(activity.insights_json);
   } else {
     result = await decodeActivity(activity, streams);
-    saveInsights(stravaId, result);
+    await saveInsights(stravaId, result);
   }
 
   const athleteName = `${athlete.firstname ?? ""} ${athlete.lastname ?? ""}`.trim();

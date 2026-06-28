@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { SyncButton } from "@/components/SyncButton";
+import { LogoutButton } from "@/components/LogoutButton";
 import { CoachDashboard } from "@/components/CoachDashboard";
 import { ActivityList } from "@/components/ActivityList";
 import { getCurrentAthlete } from "@/lib/session";
@@ -16,7 +17,7 @@ export default async function HomePage({
   const params = await searchParams;
   const athlete = await getCurrentAthlete();
   const activities = athlete
-    ? (getActivitiesForAthlete(athlete.id, 50) as ActivityRow[])
+    ? ((await getActivitiesForAthlete(athlete.id, 50)) as ActivityRow[])
     : [];
   const coachStats = computeCoachStats(activities);
 
@@ -29,7 +30,22 @@ export default async function HomePage({
       <Nav athleteName={athleteName} />
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-10">
-        {params.error && (
+        {params.error === "capacity_full" && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            This app has reached Strava&apos;s athlete limit (10 connected
+            athletes). Ask the app owner to remove an existing connection in{" "}
+            <a
+              href="https://www.strava.com/settings/api"
+              className="underline hover:text-white"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Strava API settings
+            </a>
+            .
+          </div>
+        )}
+        {params.error && params.error !== "capacity_full" && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             Connection failed: {params.error}
           </div>
@@ -61,6 +77,7 @@ export default async function HomePage({
                 >
                   Reconnect Strava
                 </a>
+                <LogoutButton />
               </div>
             </div>
 

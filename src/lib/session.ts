@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { getDb, type AthleteRow } from "./db";
+import { dbGet, type AthleteRow } from "./db";
 import { seedAthleteFromEnv } from "./strava";
 
 const COOKIE_NAME = "rd_athlete";
@@ -9,20 +9,17 @@ export async function getCurrentAthlete(): Promise<AthleteRow | null> {
   const athleteId = cookieStore.get(COOKIE_NAME)?.value;
 
   if (athleteId) {
-    const row = getDb()
-      .prepare("SELECT * FROM athletes WHERE id = ?")
-      .get(Number(athleteId)) as AthleteRow | undefined;
+    const row = await dbGet<AthleteRow>("SELECT * FROM athletes WHERE id = ?", [
+      Number(athleteId),
+    ]);
     if (row) return row;
   }
 
-  // Env-seeded or returning user without cookie — read from DB (no cookie write here;
-  // Server Components cannot modify cookies; OAuth callback sets the cookie instead).
-  const fromDb = getDb().prepare("SELECT * FROM athletes LIMIT 1").get() as
-    | AthleteRow
-    | undefined;
-  if (fromDb) return fromDb;
+  if (!process.env.VERCEL) {
+    return seedAthleteFromEnv();
+  }
 
-  return seedAthleteFromEnv();
+  return null;
 }
 
 export async function setAthleteSession(athleteDbId: number) {

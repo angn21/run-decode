@@ -1,34 +1,38 @@
-import Database from "better-sqlite3";
+import { createClient, type Client, type InValue } from "@libsql/client";
 import fs from "fs";
-import os from "os";
 import path from "path";
 
-/** Vercel serverless has a read-only project dir; use /tmp there. */
-function getDataDir(): string {
-  if (process.env.VERCEL) {
-    return path.join(os.tmpdir(), "run-decode");
+let client: Client | null = null;
+let schemaReady: Promise<void> | null = null;
+
+function getDbUrl(): string {
+  if (process.env.TURSO_DATABASE_URL) {
+    return process.env.TURSO_DATABASE_URL;
   }
-  return path.join(process.cwd(), "data");
+  const dataDir = path.join(process.cwd(), "data");
+  fs.mkdirSync(dataDir, { recursive: true });
+  return `file:${path.join(dataDir, "run-decode.db")}`;
 }
 
-const DATA_DIR = getDataDir();
-const DB_PATH = path.join(DATA_DIR, "run-decode.db");
-
-let db: Database.Database | null = null;
-
-export function getDb(): Database.Database {
-  if (!db) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    db = new Database(DB_PATH);
-    db.pragma("journal_mode = WAL");
-    initSchema(db);
+export function getDb(): Client {
+  if (!client) {
+    client = createClient({
+      url: getDbUrl(),
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+    schemaReady = initSchema(client);
   }
-  return db;
+  return client;
 }
 
-function initSchema(database: Database.Database) {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS athletes (
+async function ensureSchema(): Promise<void> {
+  getDb();
+  await schemaReady;
+}
+
+async function initSchema(database: Client): Promise<void> {
+  await database.batch([
+    `CREATE TABLE IF NOT EXISTS athletes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       strava_id INTEGER UNIQUE NOT NULL,
       access_token TEXT NOT NULL,
@@ -38,9 +42,8 @@ function initSchema(database: Database.Database) {
       lastname TEXT,
       profile TEXT,
       synced_at INTEGER
-    );
-
-    CREATE TABLE IF NOT EXISTS activities (
+    )`,
+    `CREATE TABLE IF NOT EXISTS activities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       strava_id INTEGER UNIQUE NOT NULL,
       athlete_id INTEGER NOT NULL,
@@ -64,11 +67,55 @@ function initSchema(database: Database.Database) {
       streams_json TEXT,
       insights_json TEXT,
       FOREIGN KEY (athlete_id) REFERENCES athletes(id)
-    );
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_activities_athlete_date
+      ON activities(athlete_id, start_date DESC)`,
+  ]);
+}
 
-    CREATE INDEX IF NOT EXISTS idx_activities_athlete_date
-      ON activities(athlete_id, start_date DESC);
-  `);
+function rowToRecord<T>(row: Record<string, unknown>): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (typeof value === "bigint") {
+      out[key] = Number(value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out as T;
+}
+
+export async function dbGet<T>(
+  sql: string,
+  args: InValue[] = [],
+): Promise<T | undefined> {
+  await ensureSchema();
+  const result = await getDb().execute({ sql, args });
+  if (result.rows.length === 0) return undefined;
+  return rowToRecord<T>(result.rows[0] as unknown as Record<string, unknown>);
+}
+
+export async function dbAll<T>(
+  sql: string,
+  args: InValue[] = [],
+): Promise<T[]> {
+  await ensureSchema();
+  const result = await getDb().execute({ sql, args });
+  return result.rows.map((row) =>
+    rowToRecord<T>(row as unknown as Record<string, unknown>),
+  );
+}
+
+export async function dbRun(
+  sql: string,
+  args: InValue[] = [],
+): Promise<{ lastInsertRowid: number; rowsAffected: number }> {
+  await ensureSchema();
+  const result = await getDb().execute({ sql, args });
+  return {
+    lastInsertRowid: Number(result.lastInsertRowid),
+    rowsAffected: result.rowsAffected,
+  };
 }
 
 export type AthleteRow = {

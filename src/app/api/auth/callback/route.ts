@@ -23,6 +23,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${appUrl}/?synced=1`);
   } catch (e) {
     console.error("OAuth callback error:", e);
+    const message = e instanceof Error ? e.message : "";
+    if (message.includes("ATHLETE_CAPACITY_FULL")) {
+      return NextResponse.redirect(`${appUrl}/?error=capacity_full`);
+    }
     return NextResponse.redirect(`${appUrl}/?error=auth_failed`);
   }
 }
