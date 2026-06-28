@@ -1,11 +1,18 @@
 import type { ActivityRow } from "./db";
 import { speedToPace, secondsToDuration } from "./format";
+import {
+  getRollingAvgSpeed,
+  paceVsBaseline,
+  type PaceComparison,
+} from "./run-baseline";
 import type { StravaStreams } from "./strava";
 import {
   fetchWeatherAt,
   weatherPaceAdjustment,
   type WeatherData,
 } from "./weather";
+
+export const DECODER_VERSION = 2;
 
 export type PaceInsight = {
   icon: string;
@@ -15,10 +22,23 @@ export type PaceInsight = {
 };
 
 export type DecodeResult = {
+  version: number;
   verdict: string;
   insights: PaceInsight[];
   weather: WeatherData | null;
 };
+
+export type CachedDecodeResult = DecodeResult & { version?: number };
+
+export function isCachedDecodeValid(
+  cached: CachedDecodeResult | null,
+): cached is CachedDecodeResult {
+  return !!cached && (cached.version ?? 0) >= DECODER_VERSION;
+}
+
+function pickVariant(variants: string[], seed: number): string {
+  return variants[((seed % variants.length) + variants.length) % variants.length];
+}
 
 function avgHrInRange(
   heartrate: number[],
@@ -32,7 +52,8 @@ function avgHrInRange(
 
 export async function decodeActivity(
   activity: ActivityRow,
-  streams?: StravaStreams | null,
+  streams: StravaStreams | null | undefined,
+  recentActivities: ActivityRow[],
 ): Promise<DecodeResult> {
   const insights: PaceInsight[] = [];
   let lat = 0;
@@ -58,7 +79,7 @@ export async function decodeActivity(
       title: `${weather.temperature.toFixed(0)}°C · ${weather.humidity.toFixed(0)}% humidity`,
       body:
         adj > 2
-          ? `${weather.description}. In these conditions, pace typically runs ~${adj.toFixed(0)}% slower than on a cool day — effort matters more than the clock.`
+          ? `${weather.description}. In these conditions, clock pace typically runs ~${adj.toFixed(0)}% slower than on a cool day — effort matters more than the stopwatch.`
           : `${weather.description}. Weather wasn't a major factor today.`,
       tone: adj > 4 ? "caution" : "neutral",
     });
@@ -67,9 +88,7 @@ export async function decodeActivity(
   if (activity.total_elevation_gain > 30) {
     const gain = activity.total_elevation_gain;
     const perKm =
-      activity.distance > 0
-        ? gain / (activity.distance / 1000)
-        : 0;
+      activity.distance > 0 ? gain / (activity.distance / 1000) : 0;
     insights.push({
       icon: "⛰️",
       title: `${Math.round(gain)}m elevation gain`,
@@ -136,31 +155,136 @@ export async function decodeActivity(
     tone: "neutral",
   });
 
-  const verdict = buildVerdict(activity, weather, insights);
-  return { verdict, insights, weather };
+  const baseline = getRollingAvgSpeed(recentActivities, activity.strava_id);
+  const comparison = paceVsBaseline(activity, baseline);
+
+  const verdict = buildVerdict(
+    activity,
+    weather,
+    insights,
+    comparison,
+    activity.strava_id,
+  );
+
+  return { version: DECODER_VERSION, verdict, insights, weather };
 }
 
 function buildVerdict(
   activity: ActivityRow,
   weather: WeatherData | null,
   insights: PaceInsight[],
+  paceComparison: PaceComparison,
+  seed: number,
 ): string {
   const hasHeat =
-    weather && weatherPaceAdjustment(weather.temperature, weather.humidity) > 3;
+    weather != null &&
+    weatherPaceAdjustment(weather.temperature, weather.humidity) > 3;
   const hasDrift = insights.some((i) => i.title.includes("drifted"));
   const hasHills = activity.total_elevation_gain > 50;
 
+  if (paceComparison === "faster" && !hasDrift) {
+    return pickVariant(
+      [
+        "Quicker than your recent average — nice work.",
+        "Faster than your usual lately. Strong day.",
+        "Ahead of your recent pace. Well run.",
+      ],
+      seed,
+    );
+  }
+
   if (hasHeat && hasDrift) {
-    return "Pace looked slow, but heat and rising HR explain it — effort was normal for the conditions.";
+    if (paceComparison === "slower") {
+      return pickVariant(
+        [
+          "Slower than your recent average, but heat and rising HR explain it — solid effort for the conditions.",
+          "Off your usual pace today, though the warmth and HR drift tell the real story. Good effort.",
+          "Below your recent average on the clock, but heat and cardiac drift account for most of it.",
+        ],
+        seed,
+      );
+    }
+    return pickVariant(
+      [
+        "Warm day with some cardiac drift — nothing concerning. Effort looked right.",
+        "Heat and rising HR showed up, but your pace was in line with recent runs. All good.",
+        "Typical warm-weather effort — HR drifted a bit, but nothing to worry about.",
+      ],
+      seed,
+    );
   }
+
   if (hasHeat) {
-    return "Don't read too much into the pace — it was a warm one. Effort looked appropriate.";
+    if (paceComparison === "slower") {
+      return pickVariant(
+        [
+          "A bit off your usual pace, but the heat accounts for most of that.",
+          "Slower than your recent average — warm conditions are the likely culprit.",
+          "Below your usual pace today; the heat is doing a lot of the work.",
+        ],
+        seed,
+      );
+    }
+    return pickVariant(
+      [
+        "Warm one — don't read too much into the clock today.",
+        "Heat was a factor, but your effort looked appropriate.",
+        "Warm conditions today — focus on how it felt, not the stopwatch.",
+      ],
+      seed,
+    );
   }
+
+  if (hasDrift) {
+    return pickVariant(
+      [
+        "HR crept up in the second half — normal fatigue, not a fitness issue.",
+        "Some cardiac drift late in the run — classic sign of a steady effort in warm or tired legs.",
+        "Heart rate rose through the run — effort was honest, nothing to stress about.",
+      ],
+      seed,
+    );
+  }
+
   if (hasHills) {
-    return "Solid hilly run. Slower pace on climbs is expected — you put in real work.";
+    return pickVariant(
+      [
+        "Solid hilly run. Slower pace on climbs is expected — you put in real work.",
+        "Good effort on a hilly route — the climbs did their thing.",
+        "Hilly day — pace on paper undersells the work you did.",
+      ],
+      seed,
+    );
   }
+
   if (activity.average_heartrate && activity.average_heartrate < 150) {
-    return "Nice easy run. This is the kind of day that builds your base safely.";
+    return pickVariant(
+      [
+        "Nice easy run. This is the kind of day that builds your base safely.",
+        "Comfortable effort — exactly the kind of run that adds up over time.",
+        "Easy day done right. Keep stacking these.",
+      ],
+      seed,
+    );
   }
-  return "Good run logged. Keep stacking consistent weeks.";
+
+  if (paceComparison === "slower") {
+    return pickVariant(
+      [
+        "A touch slower than your recent average — could be fatigue, weather, or just an off day.",
+        "Slightly off your usual pace lately. No big deal — one run doesn't define fitness.",
+        "Below your recent average today. Worth noting, not worth stressing over.",
+      ],
+      seed,
+    );
+  }
+
+  return pickVariant(
+    [
+      "Good run logged. Keep stacking consistent weeks.",
+      "Solid effort. Consistency beats any single run.",
+      "Another run in the bank — keep showing up.",
+    ],
+    seed,
+  );
 }

@@ -6,12 +6,19 @@ import { getCurrentAthlete } from "@/lib/session";
 import {
   fetchActivityDetail,
   fetchActivityStreams,
+  getActivitiesForAthlete,
   getActivityForAthlete,
   saveActivity,
   saveInsights,
   saveStreams,
 } from "@/lib/strava";
-import { decodeActivity } from "@/lib/decoder";
+import {
+  decodeActivity,
+  isCachedDecodeValid,
+  type CachedDecodeResult,
+  type DecodeResult,
+} from "@/lib/decoder";
+import type { ActivityRow } from "@/lib/db";
 import type { StravaStreams } from "@/lib/strava";
 import { speedToPace, secondsToDuration } from "@/lib/format";
 import { formatInRunTimezone } from "@/lib/timezone";
@@ -40,6 +47,11 @@ export default async function ActivityPage({
   const athlete = await getCurrentAthlete();
   if (!athlete) notFound();
 
+  const recentActivities = (await getActivitiesForAthlete(
+    athlete.id,
+    50,
+  )) as ActivityRow[];
+
   let activity = await getActivityForAthlete(stravaId, athlete.id);
   if (!activity) {
     try {
@@ -65,11 +77,15 @@ export default async function ActivityPage({
     }
   }
 
-  let result;
-  if (activity.insights_json) {
-    result = JSON.parse(activity.insights_json);
+  let result: DecodeResult;
+  const cached = activity.insights_json
+    ? (JSON.parse(activity.insights_json) as CachedDecodeResult)
+    : null;
+
+  if (isCachedDecodeValid(cached)) {
+    result = cached;
   } else {
-    result = await decodeActivity(activity, streams);
+    result = await decodeActivity(activity, streams, recentActivities);
     await saveInsights(stravaId, result);
   }
 
