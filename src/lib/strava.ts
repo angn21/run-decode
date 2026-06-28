@@ -1,5 +1,4 @@
 import { dbAll, dbGet, dbRun, type ActivityRow, type AthleteRow } from "./db";
-import { getOAuthRedirectUri } from "./app-url";
 
 const STRAVA_API = "https://www.strava.com/api/v3";
 
@@ -44,8 +43,8 @@ async function refreshTokenIfNeeded(athlete: AthleteRow): Promise<AthleteRow> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id: process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      client_id: process.env.STRAVA_CLIENT_ID?.trim(),
+      client_secret: process.env.STRAVA_CLIENT_SECRET?.trim(),
       grant_type: "refresh_token",
       refresh_token: athlete.refresh_token,
     }),
@@ -96,16 +95,23 @@ function isAthleteCapacityError(status: number, body: string): boolean {
   );
 }
 
-export async function exchangeCodeForToken(code: string) {
+export async function exchangeCodeForToken(code: string, redirectUri: string) {
+  const clientId = process.env.STRAVA_CLIENT_ID?.trim();
+  const clientSecret = process.env.STRAVA_CLIENT_SECRET?.trim();
+
+  if (!clientId || !clientSecret) {
+    throw new Error("OAuth token exchange failed: missing STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET");
+  }
+
   const res = await fetch("https://www.strava.com/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id: process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
       code,
       grant_type: "authorization_code",
-      redirect_uri: getOAuthRedirectUri(),
+      redirect_uri: redirectUri,
     }),
   });
 

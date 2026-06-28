@@ -71,6 +71,13 @@ export default async function HomePage({
             <code className="text-red-200">run-decode.vercel.app</code>.
           </div>
         )}
+        {params.error === "code_expired" && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            That login link was already used or expired (common on mobile). Tap{" "}
+            <strong>Connect with Strava</strong> once more — don&apos;t refresh
+            this page.
+          </div>
+        )}
         {params.error === "token_exchange" && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             Strava token exchange failed. Double-check{" "}
@@ -93,7 +100,7 @@ export default async function HomePage({
             failing, check Vercel env vars and redeploy.
           </div>
         )}
-        {params.error && !["capacity_full", "db_not_configured", "redirect_mismatch", "token_exchange", "db_error", "auth_failed"].includes(params.error) && (
+        {params.error && !["capacity_full", "db_not_configured", "redirect_mismatch", "token_exchange", "db_error", "auth_failed", "code_expired"].includes(params.error) && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             Connection failed: {params.error}
           </div>
