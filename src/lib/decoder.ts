@@ -1,3 +1,8 @@
+import {
+  compareSimilarConditions,
+  formatConditionComparison,
+  type ConditionComparison,
+} from "./conditions-compare";
 import type { ActivityRow } from "./db";
 import { speedToPace, secondsToDuration } from "./format";
 import {
@@ -14,7 +19,7 @@ import {
   type WeatherData,
 } from "./weather";
 
-export const DECODER_VERSION = 3;
+export const DECODER_VERSION = 4;
 
 export type PaceInsight = {
   icon: string;
@@ -52,6 +57,7 @@ type DecodeContext = {
   hrDriftBpm: number | null;
   elevationGain: number | null;
   elevationPerKm: number | null;
+  conditionComparison: ConditionComparison | null;
 };
 
 function pickVariant(variants: string[], seed: number): string {
@@ -116,6 +122,11 @@ function buildDecodeContext(
     hrDriftBpm,
     elevationGain: gain > 0 ? gain : null,
     elevationPerKm: gain > 0 ? perKm : null,
+    conditionComparison: compareSimilarConditions(
+      activity,
+      recentActivities,
+      weather,
+    ),
   };
 }
 
@@ -251,6 +262,10 @@ function buildVerdictStats(
         `${absPct.toFixed(0)}% faster than your recent average — ${ctx.todayPace} today vs ${ctx.baselinePace} usual (last ${ctx.baselineRunCount} runs)`,
       );
     }
+  }
+
+  if (ctx.conditionComparison) {
+    stats.push(formatConditionComparison(ctx.conditionComparison));
   }
 
   if (ctx.hrDriftBpm != null && ctx.hrDriftBpm > 8) {

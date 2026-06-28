@@ -61,7 +61,7 @@ export default async function WrappedPage({
         {activities.length === 0 ? (
           <p className="text-zinc-500">Connect Strava and sync runs to see your wrap.</p>
         ) : (
-          <WrappedView stats={stats} period={period} />
+          <WrappedView stats={stats} period={period} athleteName={athleteName} />
         )}
       </main>
     </div>

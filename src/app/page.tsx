@@ -150,12 +150,15 @@ export default async function HomePage({
                 <h2 className="text-lg font-semibold text-white">Recent runs</h2>
                 <Link
                   href="/wrapped"
-                  className="text-sm text-[#fc4c02] hover:underline"
+                  className="rounded-lg border border-[#fc4c02]/30 bg-[#fc4c02]/10 px-3 py-1.5 text-sm text-[#fc4c02] hover:bg-[#fc4c02]/20"
                 >
-                  View Wrapped →
+                  Share Wrapped →
                 </Link>
               </div>
-              <ActivityList activities={activities.slice(0, 10)} />
+              <ActivityList
+                activities={activities.slice(0, 10)}
+                allActivities={activities}
+              />
             </section>
           </>
         )}
