@@ -1,8 +1,17 @@
 import Database from "better-sqlite3";
 import fs from "fs";
+import os from "os";
 import path from "path";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+/** Vercel serverless has a read-only project dir; use /tmp there. */
+function getDataDir(): string {
+  if (process.env.VERCEL) {
+    return path.join(os.tmpdir(), "run-decode");
+  }
+  return path.join(process.cwd(), "data");
+}
+
+const DATA_DIR = getDataDir();
 const DB_PATH = path.join(DATA_DIR, "run-decode.db");
 
 let db: Database.Database | null = null;

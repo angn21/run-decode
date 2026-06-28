@@ -41,10 +41,21 @@ Then hit **Sync runs** on the dashboard.
 ## Deploy to Vercel
 
 1. Push to GitHub and import in Vercel
-2. Set environment variables (`STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL`, `SESSION_SECRET`)
-3. Update Strava app **Authorization Callback Domain** to your Vercel hostname (e.g. `run-decode.vercel.app`)
+2. Add these **Environment Variables** in Vercel → Project → Settings → Environment Variables:
 
-Note: SQLite works locally. For Vercel serverless, consider Turso or Vercel Postgres for production persistence.
+| Variable | Value |
+|---|---|
+| `STRAVA_CLIENT_ID` | From [Strava API settings](https://www.strava.com/settings/api) |
+| `STRAVA_CLIENT_SECRET` | From Strava API settings |
+| `NEXT_PUBLIC_APP_URL` | `https://run-decode.vercel.app` (your Vercel URL, no trailing slash) |
+| `SESSION_SECRET` | Any long random string |
+
+Do **not** add `STRAVA_ACCESS_TOKEN` to Vercel — use OAuth on the live site instead.
+
+3. In Strava API settings, set **Authorization Callback Domain** to `run-decode.vercel.app`
+4. Redeploy after adding env vars
+
+**Note:** On Vercel, SQLite uses ephemeral `/tmp` storage — data may reset on cold starts. For persistent hosting, migrate to [Turso](https://turso.tech) later.
 
 ## Stack
 
