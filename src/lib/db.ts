@@ -1,17 +1,25 @@
 import { createClient, type Client, type InValue } from "@libsql/client";
 import fs from "fs";
 import path from "path";
+import { getDbConfigError } from "./db-config";
 
 let client: Client | null = null;
 let schemaReady: Promise<void> | null = null;
 
 function getDbUrl(): string {
+  const configError = getDbConfigError();
+  if (configError) {
+    throw new Error(`DB_NOT_CONFIGURED: ${configError}`);
+  }
+
   if (process.env.TURSO_DATABASE_URL) {
     return process.env.TURSO_DATABASE_URL;
   }
+
   const dataDir = path.join(process.cwd(), "data");
   fs.mkdirSync(dataDir, { recursive: true });
-  return `file:${path.join(dataDir, "run-decode.db")}`;
+  const dbPath = path.join(dataDir, "run-decode.db").replace(/\\/g, "/");
+  return `file:${dbPath}`;
 }
 
 export function getDb(): Client {
@@ -31,8 +39,9 @@ async function ensureSchema(): Promise<void> {
 }
 
 async function initSchema(database: Client): Promise<void> {
-  await database.batch([
-    `CREATE TABLE IF NOT EXISTS athletes (
+  await database.batch(
+    [
+      `CREATE TABLE IF NOT EXISTS athletes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       strava_id INTEGER UNIQUE NOT NULL,
       access_token TEXT NOT NULL,
@@ -43,7 +52,7 @@ async function initSchema(database: Client): Promise<void> {
       profile TEXT,
       synced_at INTEGER
     )`,
-    `CREATE TABLE IF NOT EXISTS activities (
+      `CREATE TABLE IF NOT EXISTS activities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       strava_id INTEGER UNIQUE NOT NULL,
       athlete_id INTEGER NOT NULL,
@@ -68,9 +77,11 @@ async function initSchema(database: Client): Promise<void> {
       insights_json TEXT,
       FOREIGN KEY (athlete_id) REFERENCES athletes(id)
     )`,
-    `CREATE INDEX IF NOT EXISTS idx_activities_athlete_date
+      `CREATE INDEX IF NOT EXISTS idx_activities_athlete_date
       ON activities(athlete_id, start_date DESC)`,
-  ]);
+    ],
+    "write",
+  );
 }
 
 function rowToRecord<T>(row: Record<string, unknown>): T {

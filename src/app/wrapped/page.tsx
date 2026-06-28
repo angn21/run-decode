@@ -5,6 +5,8 @@ import { getCurrentAthlete } from "@/lib/session";
 import { getActivitiesForAthlete } from "@/lib/strava";
 import { computeWrapped } from "@/lib/wrapped";
 import type { ActivityRow } from "@/lib/db";
+import { isProductionDbConfigured } from "@/lib/db-config";
+import { TursoSetupPrompt } from "@/components/TursoSetupPrompt";
 
 export default async function WrappedPage({
   searchParams,
@@ -13,6 +15,17 @@ export default async function WrappedPage({
 }) {
   const params = await searchParams;
   const period = params.period === "month" ? "month" : "week";
+
+  if (!isProductionDbConfigured()) {
+    return (
+      <div className="min-h-screen bg-[#0a0e14]">
+        <Nav />
+        <main className="mx-auto max-w-3xl px-4 py-8">
+          <TursoSetupPrompt />
+        </main>
+      </div>
+    );
+  }
 
   const athlete = await getCurrentAthlete();
   const activities = athlete

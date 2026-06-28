@@ -15,6 +15,8 @@ import { decodeActivity } from "@/lib/decoder";
 import type { StravaStreams } from "@/lib/strava";
 import { speedToPace, secondsToDuration } from "@/lib/format";
 import { formatInRunTimezone } from "@/lib/timezone";
+import { isProductionDbConfigured } from "@/lib/db-config";
+import { TursoSetupPrompt } from "@/components/TursoSetupPrompt";
 
 export default async function ActivityPage({
   params,
@@ -23,6 +25,18 @@ export default async function ActivityPage({
 }) {
   const { id } = await params;
   const stravaId = Number(id);
+
+  if (!isProductionDbConfigured()) {
+    return (
+      <div className="min-h-screen bg-[#0a0e14]">
+        <Nav />
+        <main className="mx-auto max-w-3xl px-4 py-8">
+          <TursoSetupPrompt />
+        </main>
+      </div>
+    );
+  }
+
   const athlete = await getCurrentAthlete();
   if (!athlete) notFound();
 

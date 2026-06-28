@@ -8,6 +8,8 @@ import { getCurrentAthlete } from "@/lib/session";
 import { getActivitiesForAthlete } from "@/lib/strava";
 import { computeCoachStats } from "@/lib/coach";
 import type { ActivityRow } from "@/lib/db";
+import { isProductionDbConfigured } from "@/lib/db-config";
+import { TursoSetupPrompt } from "@/components/TursoSetupPrompt";
 
 export default async function HomePage({
   searchParams,
@@ -15,6 +17,18 @@ export default async function HomePage({
   searchParams: Promise<{ error?: string; synced?: string }>;
 }) {
   const params = await searchParams;
+
+  if (!isProductionDbConfigured()) {
+    return (
+      <div className="min-h-screen bg-[#0a0e14]">
+        <Nav />
+        <main className="mx-auto max-w-5xl px-4 py-8">
+          <TursoSetupPrompt />
+        </main>
+      </div>
+    );
+  }
+
   const athlete = await getCurrentAthlete();
   const activities = athlete
     ? ((await getActivitiesForAthlete(athlete.id, 50)) as ActivityRow[])
@@ -45,7 +59,10 @@ export default async function HomePage({
             .
           </div>
         )}
-        {params.error && params.error !== "capacity_full" && (
+        {params.error === "db_not_configured" && (
+          <TursoSetupPrompt />
+        )}
+        {params.error && params.error !== "capacity_full" && params.error !== "db_not_configured" && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             Connection failed: {params.error}
           </div>

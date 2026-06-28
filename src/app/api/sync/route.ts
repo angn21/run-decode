@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
+import { isProductionDbConfigured } from "@/lib/db-config";
 import { getCurrentAthlete } from "@/lib/session";
 import { seedAthleteFromEnv, syncActivities } from "@/lib/strava";
 
 export async function POST() {
+  if (!isProductionDbConfigured()) {
+    return NextResponse.json(
+      { error: "Database not configured. Add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN to Vercel." },
+      { status: 503 },
+    );
+  }
   let athlete = await getCurrentAthlete();
   if (!athlete && !process.env.VERCEL) {
     athlete = await seedAthleteFromEnv();

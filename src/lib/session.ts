@@ -9,10 +9,15 @@ export async function getCurrentAthlete(): Promise<AthleteRow | null> {
   const athleteId = cookieStore.get(COOKIE_NAME)?.value;
 
   if (athleteId) {
-    const row = await dbGet<AthleteRow>("SELECT * FROM athletes WHERE id = ?", [
-      Number(athleteId),
-    ]);
-    if (row) return row;
+    try {
+      const row = await dbGet<AthleteRow>("SELECT * FROM athletes WHERE id = ?", [
+        Number(athleteId),
+      ]);
+      if (row) return row;
+    } catch (e) {
+      console.error("getCurrentAthlete db error:", e);
+      return null;
+    }
   }
 
   if (!process.env.VERCEL) {
