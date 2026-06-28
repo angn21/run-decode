@@ -1,4 +1,5 @@
 import { dbAll, dbGet, dbRun, type ActivityRow, type AthleteRow } from "./db";
+import { getOAuthRedirectUri } from "./app-url";
 
 const STRAVA_API = "https://www.strava.com/api/v3";
 
@@ -96,7 +97,6 @@ function isAthleteCapacityError(status: number, body: string): boolean {
 }
 
 export async function exchangeCodeForToken(code: string) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const res = await fetch("https://www.strava.com/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -105,7 +105,7 @@ export async function exchangeCodeForToken(code: string) {
       client_secret: process.env.STRAVA_CLIENT_SECRET,
       code,
       grant_type: "authorization_code",
-      redirect_uri: `${appUrl}/api/auth/callback`,
+      redirect_uri: getOAuthRedirectUri(),
     }),
   });
 
@@ -164,7 +164,7 @@ export async function upsertAthleteFromToken(tokenData: {
     };
   }
 
-  const result = await dbRun(
+  await dbRun(
     `INSERT INTO athletes (strava_id, access_token, refresh_token, expires_at, firstname, lastname, profile)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -178,9 +178,14 @@ export async function upsertAthleteFromToken(tokenData: {
     ],
   );
 
-  return (await dbGet<AthleteRow>("SELECT * FROM athletes WHERE id = ?", [
-    result.lastInsertRowid,
-  ])) as AthleteRow;
+  const inserted = await dbGet<AthleteRow>(
+    "SELECT * FROM athletes WHERE strava_id = ?",
+    [tokenData.athlete.id],
+  );
+  if (!inserted) {
+    throw new Error("Failed to save athlete after OAuth");
+  }
+  return inserted;
 }
 
 export async function seedAthleteFromEnv(): Promise<AthleteRow | null> {

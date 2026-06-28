@@ -14,7 +14,7 @@ import { TursoSetupPrompt } from "@/components/TursoSetupPrompt";
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; synced?: string }>;
+  searchParams: Promise<{ error?: string; synced?: string; sync_warning?: string }>;
 }) {
   const params = await searchParams;
 
@@ -62,14 +62,52 @@ export default async function HomePage({
         {params.error === "db_not_configured" && (
           <TursoSetupPrompt />
         )}
-        {params.error && params.error !== "capacity_full" && params.error !== "db_not_configured" && (
+        {params.error === "redirect_mismatch" && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            Strava redirect URI mismatch. Set{" "}
+            <code className="text-red-200">NEXT_PUBLIC_APP_URL</code> to exactly{" "}
+            <code className="text-red-200">https://run-decode.vercel.app</code>{" "}
+            (no trailing slash) in Vercel, and set Strava callback domain to{" "}
+            <code className="text-red-200">run-decode.vercel.app</code>.
+          </div>
+        )}
+        {params.error === "token_exchange" && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            Strava token exchange failed. Double-check{" "}
+            <code className="text-red-200">STRAVA_CLIENT_ID</code> and{" "}
+            <code className="text-red-200">STRAVA_CLIENT_SECRET</code> in Vercel,
+            then try Connect again (OAuth codes are single-use).
+          </div>
+        )}
+        {params.error === "db_error" && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            Database error during sign-in. Verify{" "}
+            <code className="text-red-200">TURSO_DATABASE_URL</code> starts with{" "}
+            <code className="text-red-200">libsql://</code> and{" "}
+            <code className="text-red-200">TURSO_AUTH_TOKEN</code> is correct.
+          </div>
+        )}
+        {params.error === "auth_failed" && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            Connection failed. Try Connect with Strava again — if it keeps
+            failing, check Vercel env vars and redeploy.
+          </div>
+        )}
+        {params.error && !["capacity_full", "db_not_configured", "redirect_mismatch", "token_exchange", "db_error", "auth_failed"].includes(params.error) && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             Connection failed: {params.error}
           </div>
         )}
         {params.synced && (
           <div className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-sm text-teal-300">
-            Strava connected and runs synced!
+            Strava connected{params.sync_warning ? "" : " and runs synced"}!
+            {params.sync_warning && (
+              <span>
+                {" "}
+                Sync had an issue — hit <strong>Sync runs</strong> on the
+                dashboard.
+              </span>
+            )}
           </div>
         )}
 

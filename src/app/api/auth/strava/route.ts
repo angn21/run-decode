@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { getAppUrl, getOAuthRedirectUri } from "@/lib/app-url";
 
 export async function GET() {
   const clientId = process.env.STRAVA_CLIENT_ID;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
   if (!clientId) {
     return NextResponse.json(
@@ -13,7 +13,7 @@ export async function GET() {
 
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: `${appUrl}/api/auth/callback`,
+    redirect_uri: getOAuthRedirectUri(),
     response_type: "code",
     approval_prompt: "force",
     scope: "read,activity:read_all,profile:read_all",
