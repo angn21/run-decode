@@ -17,32 +17,26 @@ export function PolylineArt({ polylines }: { polylines: string[] }) {
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    const allPoints: [number, number][] = [];
-    for (const poly of polylines.slice(0, 8)) {
-      allPoints.push(...decodePolyline(poly));
-    }
+    const pad = 16;
 
-    if (allPoints.length < 2) return;
-
-    const lats = allPoints.map((p) => p[0]);
-    const lngs = allPoints.map((p) => p[1]);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-
-    const pad = 20;
-    const scaleX = (w - pad * 2) / (maxLng - minLng || 1);
-    const scaleY = (h - pad * 2) / (maxLat - minLat || 1);
-    const scale = Math.min(scaleX, scaleY);
-
-    const toX = (lng: number) => pad + (lng - minLng) * scale;
-    const toY = (lat: number) => h - pad - (lat - minLat) * scale;
-
-    ctx.globalAlpha = 0.15;
     for (const poly of polylines.slice(0, 8)) {
       const pts = decodePolyline(poly);
       if (pts.length < 2) continue;
+
+      const lats = pts.map((p) => p[0]);
+      const lngs = pts.map((p) => p[1]);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+
+      const spanLng = maxLng - minLng || 0.001;
+      const spanLat = maxLat - minLat || 0.001;
+      const scale = Math.min((w - pad * 2) / spanLng, (h - pad * 2) / spanLat);
+
+      const toX = (lng: number) => (w - spanLng * scale) / 2 + (lng - minLng) * scale;
+      const toY = (lat: number) => (h - spanLat * scale) / 2 + (maxLat - lat) * scale;
+
       ctx.beginPath();
       ctx.moveTo(toX(pts[0][1]), toY(pts[0][0]));
       for (let i = 1; i < pts.length; i++) {
@@ -50,6 +44,7 @@ export function PolylineArt({ polylines }: { polylines: string[] }) {
       }
       ctx.strokeStyle = "#2dd4bf";
       ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.18;
       ctx.stroke();
     }
   }, [polylines]);
@@ -57,9 +52,10 @@ export function PolylineArt({ polylines }: { polylines: string[] }) {
   return (
     <canvas
       ref={canvasRef}
-      width={600}
-      height={300}
-      className="pointer-events-none absolute inset-0 h-full w-full opacity-80"
+      width={480}
+      height={220}
+      className="h-full w-full"
+      aria-hidden
     />
   );
 }

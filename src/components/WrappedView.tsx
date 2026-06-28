@@ -20,14 +20,38 @@ export function WrappedView({
 
   async function renderCard(): Promise<Blob | null> {
     if (!cardRef.current) return null;
-    const dataUrl = await toPng(cardRef.current, { pixelRatio: 2 });
+    await Promise.all(
+      Array.from(cardRef.current.querySelectorAll("img")).map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete) resolve();
+            else {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            }
+          }),
+      ),
+    );
+    const dataUrl = await toPng(cardRef.current, { pixelRatio: 2, cacheBust: true });
     const res = await fetch(dataUrl);
     return res.blob();
   }
 
   async function downloadCard() {
     if (!cardRef.current) return;
-    const dataUrl = await toPng(cardRef.current, { pixelRatio: 2 });
+    await Promise.all(
+      Array.from(cardRef.current.querySelectorAll("img")).map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete) resolve();
+            else {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            }
+          }),
+      ),
+    );
+    const dataUrl = await toPng(cardRef.current, { pixelRatio: 2, cacheBust: true });
     const link = document.createElement("a");
     link.download = `run-decode-${period}-${stats.periodLabel.replace(/\s+/g, "-").toLowerCase()}.png`;
     link.href = dataUrl;
@@ -73,7 +97,13 @@ export function WrappedView({
         ref={cardRef}
         className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0f1419] p-8"
       >
-        <PolylineArt polylines={stats.polylines} />
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 w-[58%] overflow-hidden"
+          aria-hidden
+        >
+          <div className="absolute inset-0 bg-gradient-to-l from-transparent via-[#0f1419]/40 to-[#0f1419]" />
+          <PolylineArt polylines={stats.polylines} />
+        </div>
 
         <div className="relative z-10">
           <p className="text-xs uppercase tracking-widest text-[#fc4c02]">
@@ -101,7 +131,16 @@ export function WrappedView({
             <span>{stats.easyPercent}% easy runs</span>
           </div>
 
-          <p className="mt-6 text-xs text-zinc-600">run-decode.vercel.app</p>
+          <div className="mt-8 flex items-center gap-2.5">
+            <img
+              src="/icon.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 rounded-md"
+            />
+            <span className="text-xs text-zinc-500">run-decode.vercel.app</span>
+          </div>
         </div>
       </div>
 
