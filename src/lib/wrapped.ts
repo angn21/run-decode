@@ -1,16 +1,13 @@
-import {
-  endOfWeek,
-  startOfWeek,
-  subWeeks,
-  subMonths,
-  parseISO,
-  isWithinInterval,
-  format,
-  endOfMonth,
-  startOfMonth,
-} from "date-fns";
+import { parseISO, isWithinInterval, format } from "date-fns";
 import type { ActivityRow } from "./db";
 import { formatPercent, percentChange, speedToPace } from "./format";
+import {
+  formatInRunTimezone,
+  monthIntervalUtc,
+  monthLabelStart,
+  weekIntervalUtc,
+  weekLabelStart,
+} from "./timezone";
 
 export type WrappedPeriod = "week" | "month";
 
@@ -34,23 +31,17 @@ function periodRuns(
   period: WrappedPeriod,
   offset = 0,
 ) {
-  const now = period === "week" ? subWeeks(new Date(), offset) : subMonths(new Date(), offset);
-  const start =
-    period === "week"
-      ? startOfWeek(now, { weekStartsOn: 1 })
-      : startOfMonth(now);
-  const end =
-    period === "week"
-      ? endOfWeek(now, { weekStartsOn: 1 })
-      : endOfMonth(now);
+  const interval =
+    period === "week" ? weekIntervalUtc(offset) : monthIntervalUtc(offset);
+  const labelStart =
+    period === "week" ? weekLabelStart(offset) : monthLabelStart(offset);
 
   return {
     runs: activities.filter((a) => {
       const d = parseISO(a.start_date);
-      return isWithinInterval(d, { start, end });
+      return isWithinInterval(d, { start: interval.start, end: interval.end });
     }),
-    start,
-    end,
+    labelStart,
   };
 }
 
@@ -58,7 +49,7 @@ export function computeWrapped(
   activities: ActivityRow[],
   period: WrappedPeriod = "week",
 ): WrappedStats {
-  const { runs, start, end } = periodRuns(activities, period, 0);
+  const { runs, labelStart } = periodRuns(activities, period, 0);
   const { runs: prevRuns } = periodRuns(activities, period, 1);
 
   const totalKm = runs.reduce((s, r) => s + r.distance, 0) / 1000;
@@ -79,7 +70,7 @@ export function computeWrapped(
 
   const dayCounts: Record<string, number> = {};
   for (const r of runs) {
-    const day = format(parseISO(r.start_date), "EEEE");
+    const day = formatInRunTimezone(r.start_date, "EEEE");
     dayCounts[day] = (dayCounts[day] ?? 0) + 1;
   }
   const bestDay =
@@ -100,8 +91,8 @@ export function computeWrapped(
 
   const periodLabel =
     period === "week"
-      ? `Week of ${format(start, "MMM d")}`
-      : format(start, "MMMM yyyy");
+      ? `Week of ${format(labelStart, "MMM d")}`
+      : format(labelStart, "MMMM yyyy");
 
   let headline = "You showed up.";
   if (vsLastPeriod !== null && vsLastPeriod > 10) headline = "Big week.";

@@ -49,6 +49,7 @@ Then hit **Sync runs** on the dashboard.
 | `STRAVA_CLIENT_SECRET` | From Strava API settings |
 | `NEXT_PUBLIC_APP_URL` | `https://run-decode.vercel.app` (your Vercel URL, no trailing slash) |
 | `SESSION_SECRET` | Any long random string |
+| `RUN_DECODE_TIMEZONE` | Your IANA timezone (e.g. `America/Toronto`) — **use the same value locally and on Vercel** |
 
 Do **not** add `STRAVA_ACCESS_TOKEN` to Vercel — use OAuth on the live site instead.
 

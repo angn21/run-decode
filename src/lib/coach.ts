@@ -1,12 +1,7 @@
-import {
-  endOfWeek,
-  startOfWeek,
-  subWeeks,
-  parseISO,
-  isWithinInterval,
-} from "date-fns";
+import { parseISO, isWithinInterval } from "date-fns";
 import type { ActivityRow } from "./db";
 import { formatPercent, metersToKm, percentChange } from "./format";
+import { formatInRunTimezone, weekIntervalUtc } from "./timezone";
 
 export type CoachInsight = {
   type: "success" | "warning" | "info";
@@ -28,16 +23,8 @@ export type CoachStats = {
   insights: CoachInsight[];
 };
 
-function weekInterval(weeksAgo: number) {
-  const ref = subWeeks(new Date(), weeksAgo);
-  return {
-    start: startOfWeek(ref, { weekStartsOn: 1 }),
-    end: endOfWeek(ref, { weekStartsOn: 1 }),
-  };
-}
-
 function runsInWeek(activities: ActivityRow[], weeksAgo: number) {
-  const { start, end } = weekInterval(weeksAgo);
+  const { start, end } = weekIntervalUtc(weeksAgo);
   return activities.filter((a) => {
     const d = parseISO(a.start_date);
     return isWithinInterval(d, { start, end });
@@ -82,7 +69,7 @@ function detectMilestones(activities: ActivityRow[]): string[] {
   const first5k = sorted.find((a) => a.distance >= 4800);
   if (first5k) {
     milestones.push(
-      `First 5K — ${parseISO(first5k.start_date).toLocaleDateString()}`,
+      `First 5K — ${formatInRunTimezone(first5k.start_date, "M/d/yyyy")}`,
     );
   }
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ActivityRow } from "@/lib/db";
 import { speedToPace, secondsToDuration } from "@/lib/format";
-import { format, parseISO } from "date-fns";
+import { formatInRunTimezone } from "@/lib/timezone";
 
 export function ActivityList({ activities }: { activities: ActivityRow[] }) {
   if (activities.length === 0) {
@@ -23,7 +23,7 @@ export function ActivityList({ activities }: { activities: ActivityRow[] }) {
           <div>
             <p className="font-medium text-white">{activity.name}</p>
             <p className="text-xs text-zinc-500">
-              {format(parseISO(activity.start_date), "EEE, MMM d · h:mm a")}
+              {formatInRunTimezone(activity.start_date, "EEE, MMM d · h:mm a")}
             </p>
           </div>
           <div className="text-right">

@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { format, parseISO } from "date-fns";
 import { Nav } from "@/components/Nav";
 import { PaceDecoderView } from "@/components/PaceDecoderView";
 import { getCurrentAthlete } from "@/lib/session";
@@ -14,6 +13,7 @@ import { decodeActivity } from "@/lib/decoder";
 import type { ActivityRow } from "@/lib/db";
 import type { StravaStreams } from "@/lib/strava";
 import { speedToPace, secondsToDuration } from "@/lib/format";
+import { formatInRunTimezone } from "@/lib/timezone";
 
 export default async function ActivityPage({
   params,
@@ -64,7 +64,7 @@ export default async function ActivityPage({
           </p>
           <h1 className="mt-1 text-2xl font-bold text-white">{activity.name}</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            {format(parseISO(activity.start_date), "EEEE, MMM d · h:mm a")} ·{" "}
+            {formatInRunTimezone(activity.start_date, "EEEE, MMM d · h:mm a")} ·{" "}
             {(activity.distance / 1000).toFixed(1)} km ·{" "}
             {secondsToDuration(activity.moving_time)} ·{" "}
             {speedToPace(activity.average_speed)}
