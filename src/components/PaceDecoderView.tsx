@@ -8,6 +8,18 @@ export function PaceDecoderView({ result }: { result: DecodeResult }) {
         <p className="mt-2 text-lg font-medium leading-relaxed text-white">
           {result.verdict}
         </p>
+        {result.verdictStats.length > 0 && (
+          <ul className="mt-4 space-y-1.5 text-sm leading-relaxed text-zinc-400">
+            {result.verdictStats.map((stat, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="text-zinc-600" aria-hidden>
+                  •
+                </span>
+                <span>{stat}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

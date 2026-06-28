@@ -1,7 +1,9 @@
 import type { ActivityRow } from "./db";
 import { speedToPace, secondsToDuration } from "./format";
 import {
+  getBaselineRunCount,
   getRollingAvgSpeed,
+  paceDeltaPercent,
   paceVsBaseline,
   type PaceComparison,
 } from "./run-baseline";
@@ -12,7 +14,7 @@ import {
   type WeatherData,
 } from "./weather";
 
-export const DECODER_VERSION = 2;
+export const DECODER_VERSION = 3;
 
 export type PaceInsight = {
   icon: string;
@@ -24,17 +26,33 @@ export type PaceInsight = {
 export type DecodeResult = {
   version: number;
   verdict: string;
+  verdictStats: string[];
   insights: PaceInsight[];
   weather: WeatherData | null;
 };
 
-export type CachedDecodeResult = DecodeResult & { version?: number };
+export type CachedDecodeResult = DecodeResult & {
+  version?: number;
+  verdictStats?: string[];
+};
 
 export function isCachedDecodeValid(
   cached: CachedDecodeResult | null,
 ): cached is CachedDecodeResult {
   return !!cached && (cached.version ?? 0) >= DECODER_VERSION;
 }
+
+type DecodeContext = {
+  paceComparison: PaceComparison;
+  paceDeltaPct: number | null;
+  todayPace: string;
+  baselinePace: string | null;
+  baselineRunCount: number;
+  heatAdjPct: number | null;
+  hrDriftBpm: number | null;
+  elevationGain: number | null;
+  elevationPerKm: number | null;
+};
 
 function pickVariant(variants: string[], seed: number): string {
   return variants[((seed % variants.length) + variants.length) % variants.length];
@@ -48,6 +66,57 @@ function avgHrInRange(
   const slice = heartrate.slice(startIdx, endIdx).filter((h) => h > 0);
   if (slice.length === 0) return null;
   return slice.reduce((a, b) => a + b, 0) / slice.length;
+}
+
+function computeHrDrift(
+  streams: StravaStreams | null | undefined,
+): number | null {
+  if (!streams?.heartrate?.data || !streams?.distance?.data) return null;
+
+  const hr = streams.heartrate.data as number[];
+  const dist = streams.distance.data as number[];
+  const midDist = dist[dist.length - 1] / 2;
+  const midIdx = dist.findIndex((d) => d >= midDist);
+
+  if (midIdx <= 0) return null;
+
+  const hrFirst = avgHrInRange(hr, 0, midIdx);
+  const hrSecond = avgHrInRange(hr, midIdx, hr.length);
+  if (!hrFirst || !hrSecond) return null;
+
+  return hrSecond - hrFirst;
+}
+
+function buildDecodeContext(
+  activity: ActivityRow,
+  recentActivities: ActivityRow[],
+  weather: WeatherData | null,
+  hrDriftBpm: number | null,
+): DecodeContext {
+  const baseline = getRollingAvgSpeed(recentActivities, activity.strava_id);
+  const baselineRunCount = getBaselineRunCount(
+    recentActivities,
+    activity.strava_id,
+  );
+  const heatAdj = weather
+    ? weatherPaceAdjustment(weather.temperature, weather.humidity)
+    : 0;
+
+  const gain = activity.total_elevation_gain;
+  const perKm =
+    activity.distance > 0 ? gain / (activity.distance / 1000) : 0;
+
+  return {
+    paceComparison: paceVsBaseline(activity, baseline),
+    paceDeltaPct: paceDeltaPercent(activity, baseline),
+    todayPace: speedToPace(activity.average_speed),
+    baselinePace: baseline > 0 ? speedToPace(baseline) : null,
+    baselineRunCount,
+    heatAdjPct: heatAdj > 0 ? heatAdj : null,
+    hrDriftBpm,
+    elevationGain: gain > 0 ? gain : null,
+    elevationPerKm: gain > 0 ? perKm : null,
+  };
 }
 
 export async function decodeActivity(
@@ -100,40 +169,30 @@ export async function decodeActivity(
     });
   }
 
-  if (streams?.heartrate?.data && streams?.distance?.data) {
-    const hr = streams.heartrate.data as number[];
-    const dist = streams.distance.data as number[];
-    const midDist = dist[dist.length - 1] / 2;
-    const midIdx = dist.findIndex((d) => d >= midDist);
+  const hrDrift = computeHrDrift(streams);
 
-    if (midIdx > 0) {
-      const hrFirst = avgHrInRange(hr, 0, midIdx);
-      const hrSecond = avgHrInRange(hr, midIdx, hr.length);
-      if (hrFirst && hrSecond) {
-        const drift = hrSecond - hrFirst;
-        if (drift > 8) {
-          insights.push({
-            icon: "💓",
-            title: `HR drifted +${drift.toFixed(0)} bpm`,
-            body: "Your heart rate rose in the second half at similar effort — classic fatigue or heat. Not a fitness problem.",
-            tone: "caution",
-          });
-        } else if (drift < -3) {
-          insights.push({
-            icon: "💓",
-            title: "Strong second half",
-            body: `HR was ${Math.abs(drift).toFixed(0)} bpm lower late in the run — good pacing or improving fitness.`,
-            tone: "positive",
-          });
-        } else {
-          insights.push({
-            icon: "💓",
-            title: "Steady heart rate",
-            body: "HR stayed consistent throughout — a sign of controlled effort.",
-            tone: "positive",
-          });
-        }
-      }
+  if (hrDrift != null) {
+    if (hrDrift > 8) {
+      insights.push({
+        icon: "💓",
+        title: `HR drifted +${hrDrift.toFixed(0)} bpm`,
+        body: "Your heart rate rose in the second half at similar effort — classic fatigue or heat. Not a fitness problem.",
+        tone: "caution",
+      });
+    } else if (hrDrift < -3) {
+      insights.push({
+        icon: "💓",
+        title: "Strong second half",
+        body: `HR was ${Math.abs(hrDrift).toFixed(0)} bpm lower late in the run — good pacing or improving fitness.`,
+        tone: "positive",
+      });
+    } else {
+      insights.push({
+        icon: "💓",
+        title: "Steady heart rate",
+        body: "HR stayed consistent throughout — a sign of controlled effort.",
+        tone: "positive",
+      });
     }
   } else if (activity.average_heartrate) {
     insights.push({
@@ -155,35 +214,89 @@ export async function decodeActivity(
     tone: "neutral",
   });
 
-  const baseline = getRollingAvgSpeed(recentActivities, activity.strava_id);
-  const comparison = paceVsBaseline(activity, baseline);
+  const ctx = buildDecodeContext(activity, recentActivities, weather, hrDrift);
+  const { summary, stats } = buildVerdict(activity, ctx, activity.strava_id);
 
-  const verdict = buildVerdict(
-    activity,
-    weather,
+  return {
+    version: DECODER_VERSION,
+    verdict: summary,
+    verdictStats: stats,
     insights,
-    comparison,
-    activity.strava_id,
-  );
+    weather,
+  };
+}
 
-  return { version: DECODER_VERSION, verdict, insights, weather };
+function buildVerdictStats(
+  ctx: DecodeContext,
+  activity: ActivityRow,
+): string[] {
+  const stats: string[] = [];
+
+  if (
+    ctx.baselineRunCount >= 3 &&
+    ctx.paceDeltaPct != null &&
+    ctx.baselinePace
+  ) {
+    const absPct = Math.abs(ctx.paceDeltaPct);
+    if (ctx.paceComparison === "typical") {
+      stats.push(
+        `Within ${absPct.toFixed(0)}% of your recent average (${ctx.todayPace})`,
+      );
+    } else if (ctx.paceDeltaPct > 0) {
+      stats.push(
+        `${absPct.toFixed(0)}% slower than your recent average — ${ctx.todayPace} today vs ${ctx.baselinePace} usual (last ${ctx.baselineRunCount} runs)`,
+      );
+    } else {
+      stats.push(
+        `${absPct.toFixed(0)}% faster than your recent average — ${ctx.todayPace} today vs ${ctx.baselinePace} usual (last ${ctx.baselineRunCount} runs)`,
+      );
+    }
+  }
+
+  if (ctx.hrDriftBpm != null && ctx.hrDriftBpm > 8) {
+    stats.push(
+      `HR drifted +${ctx.hrDriftBpm.toFixed(0)} bpm in the second half`,
+    );
+  }
+
+  if (ctx.heatAdjPct != null && ctx.heatAdjPct > 3) {
+    stats.push(
+      `Heat/humidity may add ~${ctx.heatAdjPct.toFixed(0)}% to expected clock pace`,
+    );
+  }
+
+  if (ctx.elevationGain != null && ctx.elevationGain > 50) {
+    const perKm =
+      ctx.elevationPerKm != null
+        ? ` (~${Math.round(ctx.elevationPerKm)}m/km)`
+        : "";
+    stats.push(`${Math.round(ctx.elevationGain)}m climbed${perKm}`);
+  }
+
+  if (activity.average_heartrate && activity.average_heartrate < 150) {
+    stats.push(
+      `Avg HR ${Math.round(activity.average_heartrate)} bpm — easy effort`,
+    );
+  }
+
+  return stats;
 }
 
 function buildVerdict(
   activity: ActivityRow,
-  weather: WeatherData | null,
-  insights: PaceInsight[],
-  paceComparison: PaceComparison,
+  ctx: DecodeContext,
   seed: number,
-): string {
-  const hasHeat =
-    weather != null &&
-    weatherPaceAdjustment(weather.temperature, weather.humidity) > 3;
-  const hasDrift = insights.some((i) => i.title.includes("drifted"));
-  const hasHills = activity.total_elevation_gain > 50;
+): { summary: string; stats: string[] } {
+  const hasHeat = ctx.heatAdjPct != null && ctx.heatAdjPct > 3;
+  const hasDrift = ctx.hrDriftBpm != null && ctx.hrDriftBpm > 8;
+  const hasHills =
+    ctx.elevationGain != null && ctx.elevationGain > 50;
+  const { paceComparison } = ctx;
+
+  let summary: string;
 
   if (paceComparison === "faster" && !hasDrift) {
-    return pickVariant(
+    summary = pickVariant(
       [
         "Quicker than your recent average — nice work.",
         "Faster than your usual lately. Strong day.",
@@ -191,85 +304,75 @@ function buildVerdict(
       ],
       seed,
     );
-  }
-
-  if (hasHeat && hasDrift) {
+  } else if (hasHeat && hasDrift) {
     if (paceComparison === "slower") {
-      return pickVariant(
+      summary = pickVariant(
         [
-          "Slower than your recent average, but heat and rising HR explain it — solid effort for the conditions.",
-          "Off your usual pace today, though the warmth and HR drift tell the real story. Good effort.",
-          "Below your recent average on the clock, but heat and cardiac drift account for most of it.",
+          "Heat and rising HR explain the slower clock — solid effort for the conditions.",
+          "Warm day with cardiac drift — the numbers tell the real story. Good effort.",
+          "Below your usual pace, but heat and HR drift account for most of it.",
+        ],
+        seed,
+      );
+    } else {
+      summary = pickVariant(
+        [
+          "Warm day with some cardiac drift — nothing concerning. Effort looked right.",
+          "Heat and rising HR showed up, but your pace was in line with recent runs.",
+          "Typical warm-weather effort — HR drifted a bit, but nothing to worry about.",
         ],
         seed,
       );
     }
-    return pickVariant(
-      [
-        "Warm day with some cardiac drift — nothing concerning. Effort looked right.",
-        "Heat and rising HR showed up, but your pace was in line with recent runs. All good.",
-        "Typical warm-weather effort — HR drifted a bit, but nothing to worry about.",
-      ],
-      seed,
-    );
-  }
-
-  if (hasHeat) {
+  } else if (hasHeat) {
     if (paceComparison === "slower") {
-      return pickVariant(
+      summary = pickVariant(
         [
-          "A bit off your usual pace, but the heat accounts for most of that.",
-          "Slower than your recent average — warm conditions are the likely culprit.",
-          "Below your usual pace today; the heat is doing a lot of the work.",
+          "A bit off your usual pace — the heat likely accounts for most of that.",
+          "Slower clock today; warm conditions are the likely culprit.",
+          "Below your usual pace — the heat is doing a lot of the work.",
+        ],
+        seed,
+      );
+    } else {
+      summary = pickVariant(
+        [
+          "Warm one — don't read too much into the clock today.",
+          "Heat was a factor, but your effort looked appropriate.",
+          "Warm conditions today — focus on how it felt, not the stopwatch.",
         ],
         seed,
       );
     }
-    return pickVariant(
-      [
-        "Warm one — don't read too much into the clock today.",
-        "Heat was a factor, but your effort looked appropriate.",
-        "Warm conditions today — focus on how it felt, not the stopwatch.",
-      ],
-      seed,
-    );
-  }
-
-  if (hasDrift) {
-    return pickVariant(
+  } else if (hasDrift) {
+    summary = pickVariant(
       [
         "HR crept up in the second half — normal fatigue, not a fitness issue.",
-        "Some cardiac drift late in the run — classic sign of a steady effort in warm or tired legs.",
+        "Some cardiac drift late in the run — classic sign of steady effort in warm or tired legs.",
         "Heart rate rose through the run — effort was honest, nothing to stress about.",
       ],
       seed,
     );
-  }
-
-  if (hasHills) {
-    return pickVariant(
+  } else if (hasHills) {
+    summary = pickVariant(
       [
-        "Solid hilly run. Slower pace on climbs is expected — you put in real work.",
+        "Solid hilly run — slower pace on climbs is expected.",
         "Good effort on a hilly route — the climbs did their thing.",
         "Hilly day — pace on paper undersells the work you did.",
       ],
       seed,
     );
-  }
-
-  if (activity.average_heartrate && activity.average_heartrate < 150) {
-    return pickVariant(
+  } else if (activity.average_heartrate && activity.average_heartrate < 150) {
+    summary = pickVariant(
       [
-        "Nice easy run. This is the kind of day that builds your base safely.",
+        "Nice easy run — the kind of day that builds your base safely.",
         "Comfortable effort — exactly the kind of run that adds up over time.",
         "Easy day done right. Keep stacking these.",
       ],
       seed,
     );
-  }
-
-  if (paceComparison === "slower") {
-    return pickVariant(
+  } else if (paceComparison === "slower") {
+    summary = pickVariant(
       [
         "A touch slower than your recent average — could be fatigue, weather, or just an off day.",
         "Slightly off your usual pace lately. No big deal — one run doesn't define fitness.",
@@ -277,14 +380,16 @@ function buildVerdict(
       ],
       seed,
     );
+  } else {
+    summary = pickVariant(
+      [
+        "Good run logged. Keep stacking consistent weeks.",
+        "Solid effort. Consistency beats any single run.",
+        "Another run in the bank — keep showing up.",
+      ],
+      seed,
+    );
   }
 
-  return pickVariant(
-    [
-      "Good run logged. Keep stacking consistent weeks.",
-      "Solid effort. Consistency beats any single run.",
-      "Another run in the bank — keep showing up.",
-    ],
-    seed,
-  );
+  return { summary, stats: buildVerdictStats(ctx, activity) };
 }
