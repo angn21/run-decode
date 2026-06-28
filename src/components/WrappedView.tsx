@@ -4,7 +4,6 @@ import { useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import type { WrappedStats } from "@/lib/wrapped";
 import { secondsToDuration, formatPercent } from "@/lib/format";
-import { PolylineArt } from "./PolylineArt";
 
 export function WrappedView({
   stats,
@@ -95,17 +94,9 @@ export function WrappedView({
     <div className="space-y-6">
       <div
         ref={cardRef}
-        className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0f1419] p-8"
+        className="rounded-2xl border border-white/10 bg-[#0f1419] p-8"
       >
-        <div
-          className="pointer-events-none absolute inset-y-0 right-0 w-[58%] overflow-hidden"
-          aria-hidden
-        >
-          <div className="absolute inset-0 bg-gradient-to-l from-transparent via-[#0f1419]/40 to-[#0f1419]" />
-          <PolylineArt polylines={stats.polylines} />
-        </div>
-
-        <div className="relative z-10">
+        <div>
           <p className="text-xs uppercase tracking-widest text-[#fc4c02]">
             Run Decode · {stats.periodLabel}
           </p>
@@ -131,7 +122,7 @@ export function WrappedView({
             <span>{stats.easyPercent}% easy runs</span>
           </div>
 
-          <div className="mt-8 flex items-center gap-2.5">
+          <div className="mt-8">
             <img
               src="/icon.png"
               alt=""
@@ -139,7 +130,6 @@ export function WrappedView({
               height={28}
               className="h-7 w-7 rounded-md"
             />
-            <span className="text-xs text-zinc-500">run-decode.vercel.app</span>
           </div>
         </div>
       </div>
