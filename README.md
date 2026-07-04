@@ -3,32 +3,51 @@
 A personal running dashboard powered by the Strava API. Decode your runs, track safe habits, and wrap your week.
 
 **Features:**
-- **Consistency Coach** — weekly mileage, 10% rule warnings, easy/hard split, streaks, milestones
-- **Pace Decoder** — weather context, HR drift, elevation story, plain-English verdicts
-- **Run Wrapped** — weekly/monthly shareable recap cards with GPS trace art
+
+- **Consistency Coach** (`/`) — weekly mileage, 10% rule warnings, easy/hard split, streaks, milestones
+- **Pace Decoder** (`/activities/[id]`) — weather context, HR drift, elevation story, plain-English verdicts
+- **Run Wrapped** (`/wrapped`) — weekly/monthly shareable recap cards with GPS trace art
 
 ## Setup
 
-1. Copy `.env.example` to `.env.local` and fill in your Strava credentials:
+### 1. Environment
+
+Copy `.env.example` to `.env.local` and fill in your Strava credentials:
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env.local        # macOS / Linux
+copy .env.example .env.local      # Windows
 ```
 
-2. Get credentials from [https://www.strava.com/settings/api](https://www.strava.com/settings/api)
+Get credentials from [Strava API settings](https://www.strava.com/settings/api).
 
-3. Install and run:
+| Variable | Required | Description |
+|---|---|---|
+| `STRAVA_CLIENT_ID` | Yes | Strava app client ID |
+| `STRAVA_CLIENT_SECRET` | Yes | Strava app client secret |
+| `NEXT_PUBLIC_APP_URL` | Yes | App URL, no trailing slash (default `http://localhost:3000`) |
+| `SESSION_SECRET` | Yes | Random string for session cookies |
+| `RUN_DECODE_TIMEZONE` | Yes | IANA timezone (e.g. `America/Toronto`) — use the same value locally and on Vercel |
+| `STRAVA_ACCESS_TOKEN` | Optional | See quick dev below |
+| `STRAVA_REFRESH_TOKEN` | Optional | See quick dev below |
+| `STRAVA_EXPIRES_AT` | Optional | Unix timestamp (seconds); defaults to 6h from now if omitted |
+| `TURSO_DATABASE_URL` | Production only | See deploy section |
+| `TURSO_AUTH_TOKEN` | Production only | See deploy section |
+
+### 2. Install and run
 
 ```bash
 npm install
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) and click **Connect with Strava**
+Open [http://localhost:3000](http://localhost:3000) and click **Connect with Strava**.
 
-### Quick dev with tokens
+**Local database:** Turso is not required for local development. When `TURSO_DATABASE_URL` is unset, the app stores data in `data/run-decode.db` (created automatically, gitignored).
 
-If you already have an access token, add to `.env.local`:
+### Quick dev with tokens (local only)
+
+If you already have OAuth tokens with `activity:read_all` scope, add them to `.env.local`:
 
 ```
 STRAVA_ACCESS_TOKEN=your_token
@@ -36,13 +55,58 @@ STRAVA_REFRESH_TOKEN=your_refresh_token
 STRAVA_EXPIRES_AT=unix_timestamp
 ```
 
-Then hit **Sync runs** on the dashboard. This only works locally — not on Vercel.
+Then hit **Sync runs** on the dashboard. Manual tokens from the Strava settings page usually lack activity permissions — OAuth via **Connect with Strava** is preferred.
+
+This only works locally — do not add `STRAVA_ACCESS_TOKEN` to Vercel.
+
+## Project structure
+
+```
+run-decode/
+├── src/
+│   ├── app/                      # Next.js App Router
+│   │   ├── page.tsx              # Dashboard — coach stats + recent runs
+│   │   ├── wrapped/page.tsx      # Weekly / monthly recap cards
+│   │   ├── activities/[id]/      # Per-run pace decoder
+│   │   └── api/
+│   │       ├── auth/
+│   │       │   ├── strava/       # OAuth redirect to Strava
+│   │       │   ├── callback/     # OAuth callback
+│   │       │   └── logout/       # Clear session
+│   │       └── sync/             # Sync activities from Strava
+│   ├── components/               # UI components
+│   │   ├── CoachDashboard.tsx    # Consistency coach panel
+│   │   ├── PaceDecoderView.tsx   # Single-run decode view
+│   │   ├── WrappedView.tsx       # Shareable recap cards
+│   │   ├── ActivityList.tsx      # Recent runs list
+│   │   └── ...
+│   └── lib/                      # Core logic
+│       ├── strava.ts             # Strava API, OAuth, sync
+│       ├── coach.ts              # Consistency coach stats
+│       ├── decoder.ts            # Pace decoder insights
+│       ├── wrapped.ts            # Wrapped recap stats
+│       ├── weather.ts            # Open-Meteo integration
+│       ├── db.ts                 # libSQL client + schema
+│       ├── session.ts            # Athlete session cookies
+│       └── ...
+├── public/
+└── data/                         # Local SQLite DB (runtime, gitignored)
+```
+
+### Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start development server |
+| `npm run build` | Production build |
+| `npm run start` | Serve production build |
+| `npm run lint` | Run ESLint |
 
 ## Deploy to Vercel
 
 ### 1. Create a Turso database
 
-Run Decode uses [Turso](https://turso.tech) (libSQL) for persistent storage across serverless instances.
+Run Decode uses [Turso](https://turso.tech) (libSQL) for persistent storage across serverless instances. Turso is required on Vercel; local dev falls back to `data/run-decode.db` when these vars are unset.
 
 ```bash
 # Install Turso CLI: https://docs.turso.tech/cli/installation
@@ -56,7 +120,7 @@ Save the database URL and auth token for Vercel.
 
 ### 2. Push to GitHub and import in Vercel
 
-### 3. Add Environment Variables
+### 3. Add environment variables
 
 In Vercel → Project → Settings → Environment Variables:
 
@@ -88,4 +152,4 @@ Redeploy after adding env vars.
 
 ## Stack
 
-Next.js 16 · TypeScript · Tailwind · Turso (libSQL) · Strava API · Open-Meteo
+Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 · Turso (libSQL) · Strava API · Open-Meteo
