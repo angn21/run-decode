@@ -1,7 +1,12 @@
-import { parseISO, isWithinInterval } from "date-fns";
+import { parseISO, isWithinInterval, subDays } from "date-fns";
 import type { ActivityRow } from "./db";
-import { formatPercent, metersToKm, percentChange } from "./format";
-import { formatInRunTimezone, weekIntervalUtc } from "./timezone";
+import {
+  formatPercent,
+  metersToKm,
+  percentChange,
+  speedToPace,
+} from "./format";
+import { weekIntervalUtc } from "./timezone";
 
 export type CoachInsight = {
   type: "success" | "warning" | "info";
@@ -19,6 +24,9 @@ export type CoachStats = {
   hardCount: number;
   easyHardRatio: string;
   weeklyStreak: number;
+  avgPaceLast30: string;
+  avgHrLast30: number | null;
+  runsLast30: number;
   milestones: string[];
   insights: CoachInsight[];
 };
@@ -50,11 +58,46 @@ function classifyRun(
 
 function computeWeeklyStreak(activities: ActivityRow[]): number {
   let streak = 0;
+  // #region agent log
+  const weekDebug: { w: number; count: number; start: string; end: string }[] = [];
+  // #endregion
   for (let w = 0; w < 52; w++) {
+    const interval = weekIntervalUtc(w);
     const runs = runsInWeek(activities, w);
+    // #region agent log
+    weekDebug.push({
+      w,
+      count: runs.length,
+      start: interval.start.toISOString(),
+      end: interval.end.toISOString(),
+    });
+    // #endregion
     if (runs.length >= 2) streak++;
     else break;
   }
+  // #region agent log
+  fetch("http://127.0.0.1:7701/ingest/f2c265a6-137d-495f-9ecf-e98360205356", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "9efdf0",
+    },
+    body: JSON.stringify({
+      sessionId: "9efdf0",
+      runId: "post-fix",
+      hypothesisId: "B,D",
+      location: "coach.ts:computeWeeklyStreak",
+      message: "streak week walk",
+      data: {
+        streak,
+        activityCount: activities.length,
+        weeksChecked: weekDebug.slice(0, streak + 2),
+        breakWeek: weekDebug[streak] ?? null,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   return streak;
 }
 
@@ -65,13 +108,6 @@ function detectMilestones(activities: ActivityRow[]): string[] {
   const sorted = [...activities].sort(
     (a, b) => parseISO(a.start_date).getTime() - parseISO(b.start_date).getTime(),
   );
-
-  const first5k = sorted.find((a) => a.distance >= 4800);
-  if (first5k) {
-    milestones.push(
-      `First 5K — ${formatInRunTimezone(first5k.start_date, "M/d/yyyy")}`,
-    );
-  }
 
   const longest = sorted.reduce((max, a) => (a.distance > max.distance ? a : max));
   if (longest.distance >= 1000) {
@@ -90,7 +126,87 @@ function detectMilestones(activities: ActivityRow[]): string[] {
     milestones.push("Sub-30 5K unlocked");
   }
 
+  // #region agent log
+  fetch("http://127.0.0.1:7701/ingest/f2c265a6-137d-495f-9ecf-e98360205356", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "9efdf0",
+    },
+    body: JSON.stringify({
+      sessionId: "9efdf0",
+      runId: "post-fix",
+      hypothesisId: "A,E",
+      location: "coach.ts:detectMilestones",
+      message: "milestone window",
+      data: {
+        activityCount: activities.length,
+        oldestInWindow: sorted[0]?.start_date ?? null,
+        newestInWindow: sorted[sorted.length - 1]?.start_date ?? null,
+        longestKm: longest ? longest.distance / 1000 : null,
+        streak,
+        milestones,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
   return milestones.slice(0, 4);
+}
+
+function last30DayStats(activities: ActivityRow[]): {
+  avgPaceLast30: string;
+  avgHrLast30: number | null;
+  runsLast30: number;
+} {
+  const cutoff = subDays(new Date(), 30);
+  const recent = activities.filter(
+    (a) => parseISO(a.start_date).getTime() >= cutoff.getTime(),
+  );
+
+  const speeds = recent
+    .map((a) => a.average_speed)
+    .filter((s): s is number => !!s && s > 0);
+  const avgSpeed =
+    speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+
+  const hrs = recent
+    .map((a) => a.average_heartrate)
+    .filter((h): h is number => !!h && h > 0);
+  const avgHr =
+    hrs.length > 0 ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : null;
+
+  // #region agent log
+  fetch("http://127.0.0.1:7701/ingest/f2c265a6-137d-495f-9ecf-e98360205356", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "9efdf0",
+    },
+    body: JSON.stringify({
+      sessionId: "9efdf0",
+      runId: "post-fix",
+      hypothesisId: "fix-30d",
+      location: "coach.ts:last30DayStats",
+      message: "30-day averages",
+      data: {
+        runsLast30: recent.length,
+        avgSpeed,
+        avgPace: avgSpeed > 0 ? speedToPace(avgSpeed) : "—",
+        avgHr,
+        cutoff: cutoff.toISOString(),
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
+  return {
+    avgPaceLast30: avgSpeed > 0 ? speedToPace(avgSpeed) : "—",
+    avgHrLast30: avgHr,
+    runsLast30: recent.length,
+  };
 }
 
 export function computeCoachStats(activities: ActivityRow[]): CoachStats {
@@ -120,6 +236,8 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
 
   const weeklyStreak = computeWeeklyStreak(activities);
   const milestones = detectMilestones(activities);
+  const { avgPaceLast30, avgHrLast30, runsLast30 } =
+    last30DayStats(activities);
   const insights: CoachInsight[] = [];
 
   if (tenPercentWarning) {
@@ -182,6 +300,9 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
     hardCount,
     easyHardRatio,
     weeklyStreak,
+    avgPaceLast30,
+    avgHrLast30,
+    runsLast30,
     milestones,
     insights,
   };

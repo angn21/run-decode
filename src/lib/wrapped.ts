@@ -21,6 +21,8 @@ export type WrappedStats = {
   fastestRunName: string;
   bestDay: string;
   easyPercent: number;
+  avgPace: string;
+  avgHr: number | null;
   polylines: string[];
   headline: string;
   coachNote: string;
@@ -85,6 +87,23 @@ export function computeWrapped(
   }
   const easyPercent = runs.length ? Math.round((easy / runs.length) * 100) : 0;
 
+  const periodSpeeds = runs
+    .map((r) => r.average_speed)
+    .filter((s): s is number => !!s && s > 0);
+  const periodAvgSpeed =
+    periodSpeeds.length > 0
+      ? periodSpeeds.reduce((a, b) => a + b, 0) / periodSpeeds.length
+      : 0;
+  const avgPace = periodAvgSpeed > 0 ? speedToPace(periodAvgSpeed) : "—";
+
+  const periodHrs = runs
+    .map((r) => r.average_heartrate)
+    .filter((h): h is number => !!h && h > 0);
+  const avgHr =
+    periodHrs.length > 0
+      ? Math.round(periodHrs.reduce((a, b) => a + b, 0) / periodHrs.length)
+      : null;
+
   const polylines = runs
     .map((r) => r.summary_polyline)
     .filter((p): p is string => !!p);
@@ -114,6 +133,8 @@ export function computeWrapped(
     fastestRunName: fastest?.name ?? "—",
     bestDay,
     easyPercent,
+    avgPace,
+    avgHr,
     polylines,
     headline,
     coachNote,

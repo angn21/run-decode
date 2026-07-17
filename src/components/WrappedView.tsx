@@ -106,13 +106,18 @@ export function WrappedView({
           <h2 className="mt-2 text-4xl font-bold text-white">{stats.headline}</h2>
           <p className="mt-2 text-zinc-400">{stats.coachNote}</p>
 
-          <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-4">
+          <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-3">
             <MiniStat label="Distance" value={`${stats.totalKm.toFixed(1)} km`} />
             <MiniStat label="Runs" value={String(stats.runCount)} />
             <MiniStat label="Time" value={secondsToDuration(stats.totalTime)} />
             <MiniStat
               label="vs last"
               value={formatPercent(stats.vsLastPeriod)}
+            />
+            <MiniStat label="Avg pace" value={stats.avgPace} />
+            <MiniStat
+              label="Avg HR"
+              value={stats.avgHr != null ? `${stats.avgHr} bpm` : "—"}
             />
           </div>
 

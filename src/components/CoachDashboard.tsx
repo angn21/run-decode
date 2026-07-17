@@ -9,7 +9,7 @@ export function CoachDashboard({ stats }: { stats: CoachStats }) {
         <p className="text-sm text-zinc-500">Are you building a safe habit?</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="This week"
           value={`${stats.thisWeekKm.toFixed(1)} km`}
@@ -30,6 +30,16 @@ export function CoachDashboard({ stats }: { stats: CoachStats }) {
           label="Last week"
           value={`${stats.lastWeekKm.toFixed(1)} km`}
           sub="baseline"
+        />
+        <StatCard
+          label="Avg pace (30d)"
+          value={stats.avgPaceLast30}
+          sub={`${stats.runsLast30} runs`}
+        />
+        <StatCard
+          label="Avg HR (30d)"
+          value={stats.avgHrLast30 != null ? `${stats.avgHrLast30} bpm` : "—"}
+          sub={`${stats.runsLast30} runs`}
         />
       </div>
 
