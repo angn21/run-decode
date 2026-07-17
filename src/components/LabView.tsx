@@ -447,7 +447,7 @@ export function LabView({
               value={stats.hrZonesSummary}
             />
             <MiniStat
-              label="Cadence"
+              label="Avg cadence"
               value={
                 stats.avgCadence != null ? `${stats.avgCadence} spm` : "—"
               }

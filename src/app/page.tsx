@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { SyncButton } from "@/components/SyncButton";
+import { AutoSync } from "@/components/AutoSync";
 import { LogoutButton } from "@/components/LogoutButton";
 import { CoachDashboard } from "@/components/CoachDashboard";
 import { ActivityList } from "@/components/ActivityList";
@@ -138,6 +139,7 @@ export default async function HomePage({
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <SyncButton />
+                <AutoSync />
                 <a
                   href="/api/auth/strava"
                   className="rounded-lg border border-white/15 px-4 py-2 text-sm text-zinc-300 transition hover:border-white/30 hover:text-white"

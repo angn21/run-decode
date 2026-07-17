@@ -343,6 +343,75 @@ export async function syncActivities(athlete: AthleteRow, maxPages = 3) {
   return total;
 }
 
+export async function getLatestActivityForAthlete(athleteId: number) {
+  return dbGet<ActivityRow>(
+    `SELECT * FROM activities
+     WHERE athlete_id = ? AND (type = 'Run' OR sport_type = 'Run')
+     ORDER BY start_date DESC LIMIT 1`,
+    [athleteId],
+  );
+}
+
+/** Newest Run from Strava (list is newest-first). */
+export async function fetchLatestStravaRun(
+  athlete: AthleteRow,
+): Promise<StravaActivity | null> {
+  const activities = await fetchActivities(athlete, 1, 30);
+  return (
+    activities.find((a) => a.type === "Run" || a.sport_type === "Run") ?? null
+  );
+}
+
+export async function touchAthleteSynced(athleteId: number): Promise<void> {
+  await dbRun("UPDATE athletes SET synced_at = ? WHERE id = ?", [
+    Math.floor(Date.now() / 1000),
+    athleteId,
+  ]);
+}
+
+/**
+ * Pull newer runs from Strava until we hit the DB's previous latest (or max pages).
+ * Returns Strava IDs that were not in the DB before this sync.
+ */
+export async function syncNewActivities(
+  athlete: AthleteRow,
+  maxPages = 3,
+): Promise<{ synced: number; newStravaIds: number[] }> {
+  const latest = await getLatestActivityForAthlete(athlete.id);
+  const latestStravaId = latest?.strava_id ?? null;
+  const newStravaIds: number[] = [];
+  let synced = 0;
+  let hitKnownLatest = false;
+
+  for (let page = 1; page <= maxPages; page++) {
+    const activities = await fetchActivities(athlete, page);
+    if (activities.length === 0) break;
+
+    for (const activity of activities) {
+      if (!(activity.type === "Run" || activity.sport_type === "Run")) {
+        continue;
+      }
+
+      if (latestStravaId != null && activity.id === latestStravaId) {
+        hitKnownLatest = true;
+        break;
+      }
+
+      const existing = await getActivityForAthlete(activity.id, athlete.id);
+      await saveActivity(athlete.id, activity);
+      if (!existing) {
+        newStravaIds.push(activity.id);
+        synced++;
+      }
+    }
+
+    if (hitKnownLatest || activities.length < 50) break;
+  }
+
+  await touchAthleteSynced(athlete.id);
+  return { synced, newStravaIds };
+}
+
 export async function getActivitiesForAthlete(athleteId: number, limit = 50) {
   return dbAll<ActivityRow>(
     `SELECT * FROM activities WHERE athlete_id = ? AND (type = 'Run' OR sport_type = 'Run')
