@@ -35,7 +35,7 @@ export default async function LabPage({
 
   const stravaHrZones = athlete ? await fetchAthleteHrZones(athlete) : null;
   const stats = computeLabStats(activities, period, stravaHrZones);
-  const chartData = buildLabChartData(activities, period);
+  const chartData = buildLabChartData(activities, period, stravaHrZones);
   const athleteName = athlete
     ? `${athlete.firstname ?? ""} ${athlete.lastname ?? ""}`.trim()
     : null;

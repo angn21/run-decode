@@ -52,6 +52,18 @@ function accumulateActivityZones(
   }
 }
 
+/** Seconds spent in each HR zone for one activity's streams. */
+export function zoneSecondsForStreams(
+  streams: StravaStreams,
+  ranges: HrZoneRange[],
+): number[] | null {
+  if (!ranges.length || !streams.heartrate?.data?.length) return null;
+  const buckets = ranges.map(() => 0);
+  accumulateActivityZones(streams, ranges, buckets);
+  if (buckets.every((b) => b === 0)) return null;
+  return buckets;
+}
+
 export function computeHrZones(
   activities: ActivityRow[],
   stravaZones: HrZoneRange[] | null,

@@ -8,6 +8,7 @@ import {
   fetchActivityStreams,
   getActivitiesForAthlete,
   getActivityForAthlete,
+  getGearByStravaId,
   saveActivity,
   saveInsights,
   saveStreams,
@@ -90,6 +91,9 @@ export default async function ActivityPage({
   }
 
   const athleteName = `${athlete.firstname ?? ""} ${athlete.lastname ?? ""}`.trim();
+  const gear = activity.gear_id
+    ? await getGearByStravaId(athlete.id, activity.gear_id)
+    : undefined;
 
   return (
     <div className="min-h-screen bg-[#0a0e14]">
@@ -109,10 +113,15 @@ export default async function ActivityPage({
             {(activity.distance / 1000).toFixed(1)} km ·{" "}
             {secondsToDuration(activity.moving_time)} ·{" "}
             {speedToPace(activity.average_speed)}
+            {gear?.name ? ` · ${gear.name}` : ""}
           </p>
         </div>
 
-        <PaceDecoderView result={result} />
+        <PaceDecoderView
+          result={result}
+          streams={streams}
+          polyline={activity.summary_polyline}
+        />
       </main>
     </div>
   );

@@ -28,6 +28,12 @@ export type CoachStats = {
   avgPaceLast30: string;
   avgHrLast30: number | null;
   runsLast30: number;
+  thisWeekElevM: number;
+  lastWeekElevM: number;
+  elevChange: number | null;
+  thisWeekSuffer: number | null;
+  lastWeekSuffer: number | null;
+  sufferChange: number | null;
   milestones: string[];
   insights: CoachInsight[];
 };
@@ -42,6 +48,20 @@ function runsInWeek(activities: ActivityRow[], weeksAgo: number) {
 
 function weekKm(runs: ActivityRow[]) {
   return runs.reduce((sum, r) => sum + r.distance, 0) / 1000;
+}
+
+function weekElevM(runs: ActivityRow[]) {
+  return Math.round(
+    runs.reduce((sum, r) => sum + (r.total_elevation_gain || 0), 0),
+  );
+}
+
+function weekSuffer(runs: ActivityRow[]): number | null {
+  const vals = runs
+    .map((r) => r.suffer_score)
+    .filter((s): s is number => s != null && s > 0);
+  if (vals.length === 0) return null;
+  return Math.round(vals.reduce((a, b) => a + b, 0));
 }
 
 function computeWeeklyStreak(activities: ActivityRow[]): number {
@@ -121,6 +141,16 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
   const tenPercentWarning =
     lastWeekKm > 0 && thisWeekKm > lastWeekKm * 1.1;
 
+  const thisWeekElevM = weekElevM(thisWeek);
+  const lastWeekElevM = weekElevM(lastWeek);
+  const elevChange = percentChange(thisWeekElevM, lastWeekElevM);
+  const thisWeekSuffer = weekSuffer(thisWeek);
+  const lastWeekSuffer = weekSuffer(lastWeek);
+  const sufferChange =
+    thisWeekSuffer != null && lastWeekSuffer != null
+      ? percentChange(thisWeekSuffer, lastWeekSuffer)
+      : null;
+
   const recent = activities.slice(0, 20);
   const rollingAvg = rollingAvgSpeed(recent);
 
@@ -157,6 +187,32 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
       type: "warning",
       title: "Lots of hard days",
       body: `${hardCount} hard runs this week. Consider an easy day or rest tomorrow — recovery is where fitness happens.`,
+    });
+  }
+
+  if (
+    elevChange != null &&
+    elevChange > 20 &&
+    mileageChange != null &&
+    mileageChange > 0 &&
+    thisWeekElevM > 100
+  ) {
+    insights.push({
+      type: "warning",
+      title: "Climbing load up",
+      body: `Elevation is ${formatPercent(elevChange)} vs last week (${thisWeekElevM} m) while mileage also rose. Hills add stress — keep most runs easy.`,
+    });
+  } else if (
+    sufferChange != null &&
+    sufferChange > 25 &&
+    thisWeekSuffer != null &&
+    lastWeekSuffer != null &&
+    lastWeekSuffer > 0
+  ) {
+    insights.push({
+      type: "warning",
+      title: "Relative effort spiked",
+      body: `Suffer score sum is ${formatPercent(sufferChange)} vs last week (${thisWeekSuffer} vs ${lastWeekSuffer}). Watch recovery if hard days stack up.`,
     });
   }
 
@@ -201,6 +257,12 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
     avgPaceLast30,
     avgHrLast30,
     runsLast30,
+    thisWeekElevM,
+    lastWeekElevM,
+    elevChange,
+    thisWeekSuffer,
+    lastWeekSuffer,
+    sufferChange,
     milestones,
     insights,
   };

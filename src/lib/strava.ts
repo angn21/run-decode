@@ -1,4 +1,4 @@
-import { dbAll, dbGet, dbRun, type ActivityRow, type AthleteRow } from "./db";
+import { dbAll, dbGet, dbRun, type ActivityRow, type AthleteRow, type GearRow } from "./db";
 
 const STRAVA_API = "https://www.strava.com/api/v3";
 
@@ -28,6 +28,7 @@ export type StravaActivity = {
   map?: { summary_polyline?: string };
   start_latlng?: [number, number];
   suffer_score?: number;
+  gear_id?: string | null;
 };
 
 export type StravaStreams = Record<
@@ -285,16 +286,20 @@ export async function saveActivity(
   athleteId: number,
   activity: StravaActivity,
 ): Promise<void> {
+  const gearId = activity.gear_id ?? null;
   await dbRun(
     `INSERT INTO activities (
       strava_id, athlete_id, name, type, sport_type, start_date, distance, moving_time,
       elapsed_time, total_elevation_gain, average_speed, max_speed, average_heartrate,
-      max_heartrate, average_cadence, summary_polyline, start_latlng, suffer_score, raw_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      max_heartrate, average_cadence, summary_polyline, start_latlng, suffer_score, gear_id, raw_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(strava_id) DO UPDATE SET
       name = excluded.name, distance = excluded.distance, moving_time = excluded.moving_time,
       average_speed = excluded.average_speed, average_heartrate = excluded.average_heartrate,
-      total_elevation_gain = excluded.total_elevation_gain, raw_json = excluded.raw_json`,
+      total_elevation_gain = excluded.total_elevation_gain, suffer_score = excluded.suffer_score,
+      gear_id = COALESCE(excluded.gear_id, activities.gear_id),
+      summary_polyline = excluded.summary_polyline,
+      raw_json = excluded.raw_json`,
     [
       activity.id,
       athleteId,
@@ -314,6 +319,7 @@ export async function saveActivity(
       activity.map?.summary_polyline ?? null,
       activity.start_latlng ? JSON.stringify(activity.start_latlng) : null,
       activity.suffer_score ?? null,
+      gearId,
       JSON.stringify(activity),
     ],
   );
@@ -340,6 +346,7 @@ export async function syncActivities(athlete: AthleteRow, maxPages = 3) {
     athlete.id,
   ]);
 
+  await syncAthleteGears(athlete);
   return total;
 }
 
@@ -409,7 +416,119 @@ export async function syncNewActivities(
   }
 
   await touchAthleteSynced(athlete.id);
+  await syncAthleteGears(athlete);
   return { synced, newStravaIds };
+}
+
+export type StravaGear = {
+  id: string;
+  name?: string;
+  distance?: number;
+  brand_name?: string;
+  model_name?: string;
+  retired?: boolean;
+};
+
+export async function fetchGear(
+  athlete: AthleteRow,
+  gearId: string,
+): Promise<StravaGear> {
+  return stravaFetch(athlete, `/gear/${gearId}`);
+}
+
+export async function upsertGear(
+  athleteId: number,
+  gear: StravaGear,
+): Promise<void> {
+  await dbRun(
+    `INSERT INTO gears (
+      athlete_id, strava_gear_id, name, distance_m, brand_name, model_name, retired, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(athlete_id, strava_gear_id) DO UPDATE SET
+      name = excluded.name,
+      distance_m = excluded.distance_m,
+      brand_name = excluded.brand_name,
+      model_name = excluded.model_name,
+      retired = excluded.retired,
+      updated_at = excluded.updated_at`,
+    [
+      athleteId,
+      gear.id,
+      gear.name ?? null,
+      gear.distance ?? 0,
+      gear.brand_name ?? null,
+      gear.model_name ?? null,
+      gear.retired ? 1 : 0,
+      Math.floor(Date.now() / 1000),
+    ],
+  );
+}
+
+/** Pull gear_id from stored raw_json into the column (legacy rows synced before gear_id). */
+export async function backfillGearIdsFromRawJson(
+  athleteId: number,
+): Promise<number> {
+  const rows = await dbAll<{ strava_id: number; raw_json: string | null }>(
+    `SELECT strava_id, raw_json FROM activities
+     WHERE athlete_id = ?
+       AND (gear_id IS NULL OR gear_id = '')
+       AND raw_json IS NOT NULL AND raw_json != ''`,
+    [athleteId],
+  );
+  let n = 0;
+  for (const row of rows) {
+    try {
+      const raw = JSON.parse(row.raw_json!) as { gear_id?: string | null };
+      if (raw.gear_id) {
+        await dbRun("UPDATE activities SET gear_id = ? WHERE strava_id = ?", [
+          raw.gear_id,
+          row.strava_id,
+        ]);
+        n++;
+      }
+    } catch {
+      /* ignore bad json */
+    }
+  }
+  return n;
+}
+
+/** Fetch Strava gear for distinct gear_ids on this athlete's activities. */
+export async function syncAthleteGears(athlete: AthleteRow): Promise<number> {
+  await backfillGearIdsFromRawJson(athlete.id);
+  const rows = await dbAll<{ gear_id: string }>(
+    `SELECT DISTINCT gear_id FROM activities
+     WHERE athlete_id = ? AND gear_id IS NOT NULL AND gear_id != ''`,
+    [athlete.id],
+  );
+  let n = 0;
+  for (const row of rows) {
+    try {
+      const gear = await fetchGear(athlete, row.gear_id);
+      await upsertGear(athlete.id, gear);
+      n++;
+    } catch (e) {
+      console.error(`syncAthleteGears failed for ${row.gear_id}:`, e);
+    }
+  }
+  return n;
+}
+
+export async function getGearsForAthlete(athleteId: number): Promise<GearRow[]> {
+  return dbAll<GearRow>(
+    `SELECT * FROM gears WHERE athlete_id = ? ORDER BY retired ASC, distance_m DESC`,
+    [athleteId],
+  );
+}
+
+export async function getGearByStravaId(
+  athleteId: number,
+  stravaGearId: string,
+): Promise<GearRow | undefined> {
+  return dbGet<GearRow>(
+    `SELECT * FROM gears WHERE athlete_id = ? AND strava_gear_id = ?`,
+    [athleteId, stravaGearId],
+  );
 }
 
 export async function getActivitiesForAthlete(athleteId: number, limit = 50) {

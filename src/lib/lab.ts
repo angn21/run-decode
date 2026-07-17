@@ -21,6 +21,8 @@ import {
 import { findFastestKmSplit, type FastestKmSplit } from "./km-split";
 import { computeHrZones, type HrZoneRange, type HrZoneStat } from "./hr-zones";
 import { classifyRun, rollingAvgSpeed } from "./run-classify";
+import { computeCadenceFade } from "./decoder";
+import type { StravaStreams } from "./strava";
 import {
   formatInRunTimezone,
   getRunDecodeTimezone,
@@ -75,6 +77,9 @@ export type LabStats = {
   avgHr: number | null;
   maxHr: number | null;
   avgCadence: number | null;
+  /** Mean cadence fade (spm) across runs with cadence streams; positive = drop late. */
+  cadenceFadeAvg: number | null;
+  cadenceFadeSamples: number;
   easyCount: number;
   hardCount: number;
   easyPercent: number | null;
@@ -315,6 +320,25 @@ export function computeLabStats(
       ? Math.round(avgCadenceRaw < 120 ? avgCadenceRaw * 2 : avgCadenceRaw)
       : null;
 
+  const fadeValues: number[] = [];
+  for (const r of runs) {
+    if (!r.streams_json) continue;
+    try {
+      const streams = JSON.parse(r.streams_json) as StravaStreams;
+      const fade = computeCadenceFade(streams);
+      if (fade != null) fadeValues.push(fade);
+    } catch {
+      /* ignore */
+    }
+  }
+  const cadenceFadeSamples = fadeValues.length;
+  const cadenceFadeAvg =
+    fadeValues.length >= 2
+      ? Math.round(
+          (fadeValues.reduce((a, b) => a + b, 0) / fadeValues.length) * 10,
+        ) / 10
+      : null;
+
   const baseline = rollingAvgSpeed(activities);
   let easyCount = 0;
   let hardCount = 0;
@@ -372,6 +396,8 @@ export function computeLabStats(
     avgHr,
     maxHr,
     avgCadence,
+    cadenceFadeAvg,
+    cadenceFadeSamples,
     easyCount,
     hardCount,
     easyPercent,

@@ -302,6 +302,19 @@ export function LabView({
           value={stats.avgCadence != null ? `${stats.avgCadence} spm` : "—"}
         />
         <StatCard
+          label="Cadence fade"
+          value={
+            stats.cadenceFadeAvg != null
+              ? `${stats.cadenceFadeAvg > 0 ? "−" : "+"}${Math.abs(stats.cadenceFadeAvg).toFixed(1)} spm`
+              : "—"
+          }
+          sub={
+            stats.cadenceFadeSamples >= 2
+              ? `Late vs early · ${stats.cadenceFadeSamples} runs with streams`
+              : "Need stream data on 2+ runs"
+          }
+        />
+        <StatCard
           label="Easy / hard"
           value={stats.easyHardLabel}
           sub={stats.easyHardDetail}

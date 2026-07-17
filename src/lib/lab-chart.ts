@@ -9,21 +9,54 @@ import {
 import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
 import type { ActivityRow } from "./db";
 import { secondsToDuration } from "./format";
+import { zoneSecondsForStreams, type HrZoneRange } from "./hr-zones";
 import { resolveLabInterval, type LabPeriod } from "./lab";
+import type { StravaStreams } from "./strava";
 import { getRunDecodeTimezone } from "./timezone";
+
+export type LabChartMode =
+  | "cumulative"
+  | "daily_volume"
+  | "avg_hr"
+  | "zone_time";
+
+export const LAB_CHART_MODES: { id: LabChartMode; label: string }[] = [
+  { id: "cumulative", label: "Cumulative" },
+  { id: "daily_volume", label: "Daily volume" },
+  { id: "avg_hr", label: "Avg HR" },
+  { id: "zone_time", label: "Zone time" },
+];
 
 export type LabTrendDay = {
   dayIndex: number;
-  /** Current-period calendar label for the X-axis, e.g. "Jun 17". */
   label: string;
-  /** Matching calendar day in the prior window, if any. */
   priorLabel: string | null;
+  /** Cumulative distance (km) */
   distanceKm: number;
   movingTimeSec: number;
   elevationM: number;
   distanceKmPrior: number | null;
   movingTimeSecPrior: number | null;
   elevationMPrior: number | null;
+  /** Daily (non-cumulative) km */
+  dailyKm: number;
+  dailyKmPrior: number | null;
+  /** Mean of run avg HR that day; null if no HR */
+  avgHr: number | null;
+  avgHrPrior: number | null;
+  /** % of HR-stream time in each zone that day (0–100) */
+  z1: number;
+  z2: number;
+  z3: number;
+  z4: number;
+  z5: number;
+  z1Prior: number | null;
+  z2Prior: number | null;
+  z3Prior: number | null;
+  z4Prior: number | null;
+  z5Prior: number | null;
+  hasZoneData: boolean;
+  hasZoneDataPrior: boolean;
 };
 
 export type LabChartMetricId = "distanceKm" | "movingTimeSec" | "elevationM";
@@ -45,12 +78,21 @@ export const LAB_CHART_METRICS: LabChartMetricDef[] = [
 
 export const DEFAULT_LAB_CHART_METRICS: LabChartMetricId[] = ["distanceKm"];
 
+export const ZONE_COLORS = [
+  "#94a3b8",
+  "#38bdf8",
+  "#a3e635",
+  "#fbbf24",
+  "#f43f5e",
+] as const;
+
 export type LabChartData = {
   days: LabTrendDay[];
   priorPeriodLabel: string | null;
   hasPrior: boolean;
   dayCount: number;
   hasRuns: boolean;
+  hasZoneStreams: boolean;
 };
 
 type DailyBucket = {
@@ -60,6 +102,9 @@ type DailyBucket = {
   distanceKm: number;
   movingTimeSec: number;
   elevationM: number;
+  hrSum: number;
+  hrCount: number;
+  zoneSeconds: number[];
 };
 
 function priorInterval(start: Date, end: Date): { start: Date; end: Date } {
@@ -103,7 +148,9 @@ function buildDailyBuckets(
   windowStart: Date,
   dayCount: number,
   tz: string,
+  stravaZones: HrZoneRange[] | null,
 ): DailyBucket[] {
+  const zoneN = stravaZones?.length ?? 5;
   const buckets: DailyBucket[] = [];
   const startLocal = startOfDay(toZonedTime(windowStart, tz));
 
@@ -117,6 +164,9 @@ function buildDailyBuckets(
       distanceKm: 0,
       movingTimeSec: 0,
       elevationM: 0,
+      hrSum: 0,
+      hrCount: 0,
+      zoneSeconds: Array.from({ length: zoneN }, () => 0),
     });
   }
 
@@ -128,6 +178,23 @@ function buildDailyBuckets(
     bucket.distanceKm += a.distance / 1000;
     bucket.movingTimeSec += a.moving_time || 0;
     bucket.elevationM += a.total_elevation_gain || 0;
+    if (a.average_heartrate != null && a.average_heartrate > 0) {
+      bucket.hrSum += a.average_heartrate;
+      bucket.hrCount++;
+    }
+    if (stravaZones && a.streams_json) {
+      try {
+        const streams = JSON.parse(a.streams_json) as StravaStreams;
+        const zs = zoneSecondsForStreams(streams, stravaZones);
+        if (zs) {
+          for (let i = 0; i < zs.length && i < bucket.zoneSeconds.length; i++) {
+            bucket.zoneSeconds[i] += zs[i];
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   return buckets;
@@ -155,6 +222,23 @@ function toCumulative(buckets: DailyBucket[]): {
   return { distanceKm, movingTimeSec, elevationM };
 }
 
+function zonePercents(seconds: number[]): {
+  percents: number[];
+  hasData: boolean;
+} {
+  const total = seconds.reduce((a, b) => a + b, 0);
+  if (total <= 0) {
+    return {
+      percents: seconds.map(() => 0),
+      hasData: false,
+    };
+  }
+  return {
+    percents: seconds.map((s) => Math.round((s / total) * 1000) / 10),
+    hasData: true,
+  };
+}
+
 function resolveAllTimeWindow(activities: ActivityRow[]): {
   start: Date;
   end: Date;
@@ -176,6 +260,7 @@ function resolveAllTimeWindow(activities: ActivityRow[]): {
 export function buildLabChartData(
   activities: ActivityRow[],
   period: LabPeriod,
+  stravaZones: HrZoneRange[] | null = null,
 ): LabChartData {
   const tz = getRunDecodeTimezone();
   let { start, end } = resolveLabInterval(period);
@@ -192,6 +277,7 @@ export function buildLabChartData(
         hasPrior: false,
         dayCount: 0,
         hasRuns: false,
+        hasZoneStreams: false,
       };
     }
     start = allTime.start;
@@ -214,30 +300,75 @@ export function buildLabChartData(
       hasPrior,
       dayCount,
       hasRuns: false,
+      hasZoneStreams: false,
     };
   }
 
-  const currentBuckets = buildDailyBuckets(activities, start, dayCount, tz);
+  const currentBuckets = buildDailyBuckets(
+    activities,
+    start,
+    dayCount,
+    tz,
+    stravaZones,
+  );
   const currentCum = toCumulative(currentBuckets);
 
-  let priorCum: ReturnType<typeof toCumulative> | null = null;
   let priorBuckets: DailyBucket[] | null = null;
+  let priorCum: ReturnType<typeof toCumulative> | null = null;
   if (hasPrior && priorStart) {
-    priorBuckets = buildDailyBuckets(activities, priorStart, dayCount, tz);
+    priorBuckets = buildDailyBuckets(
+      activities,
+      priorStart,
+      dayCount,
+      tz,
+      stravaZones,
+    );
     priorCum = toCumulative(priorBuckets);
   }
 
-  const days: LabTrendDay[] = currentBuckets.map((b, i) => ({
-    dayIndex: i,
-    label: b.label,
-    priorLabel: priorBuckets?.[i]?.label ?? null,
-    distanceKm: currentCum.distanceKm[i],
-    movingTimeSec: currentCum.movingTimeSec[i],
-    elevationM: currentCum.elevationM[i],
-    distanceKmPrior: priorCum ? priorCum.distanceKm[i] : null,
-    movingTimeSecPrior: priorCum ? priorCum.movingTimeSec[i] : null,
-    elevationMPrior: priorCum ? priorCum.elevationM[i] : null,
-  }));
+  let hasZoneStreams = false;
+  const days: LabTrendDay[] = currentBuckets.map((b, i) => {
+    const z = zonePercents(b.zoneSeconds);
+    if (z.hasData) hasZoneStreams = true;
+    const pz = priorBuckets
+      ? zonePercents(priorBuckets[i].zoneSeconds)
+      : null;
+    if (pz?.hasData) hasZoneStreams = true;
+
+    return {
+      dayIndex: i,
+      label: b.label,
+      priorLabel: priorBuckets?.[i]?.label ?? null,
+      distanceKm: currentCum.distanceKm[i],
+      movingTimeSec: currentCum.movingTimeSec[i],
+      elevationM: currentCum.elevationM[i],
+      distanceKmPrior: priorCum ? priorCum.distanceKm[i] : null,
+      movingTimeSecPrior: priorCum ? priorCum.movingTimeSec[i] : null,
+      elevationMPrior: priorCum ? priorCum.elevationM[i] : null,
+      dailyKm: Math.round(b.distanceKm * 100) / 100,
+      dailyKmPrior: priorBuckets
+        ? Math.round(priorBuckets[i].distanceKm * 100) / 100
+        : null,
+      avgHr:
+        b.hrCount > 0 ? Math.round(b.hrSum / b.hrCount) : null,
+      avgHrPrior:
+        priorBuckets && priorBuckets[i].hrCount > 0
+          ? Math.round(priorBuckets[i].hrSum / priorBuckets[i].hrCount)
+          : null,
+      z1: z.percents[0] ?? 0,
+      z2: z.percents[1] ?? 0,
+      z3: z.percents[2] ?? 0,
+      z4: z.percents[3] ?? 0,
+      z5: z.percents[4] ?? 0,
+      z1Prior: pz?.hasData ? (pz.percents[0] ?? 0) : null,
+      z2Prior: pz?.hasData ? (pz.percents[1] ?? 0) : null,
+      z3Prior: pz?.hasData ? (pz.percents[2] ?? 0) : null,
+      z4Prior: pz?.hasData ? (pz.percents[3] ?? 0) : null,
+      z5Prior: pz?.hasData ? (pz.percents[4] ?? 0) : null,
+      hasZoneData: z.hasData,
+      hasZoneDataPrior: pz?.hasData ?? false,
+    };
+  });
 
   return {
     days,
@@ -245,6 +376,7 @@ export function buildLabChartData(
     hasPrior,
     dayCount,
     hasRuns: true,
+    hasZoneStreams,
   };
 }
 
@@ -272,22 +404,4 @@ export function formatAxisTick(unit: LabChartUnit, value: number): string {
     case "m":
       return `${Math.round(value)}`;
   }
-}
-
-export function getMetricValue(
-  day: LabTrendDay,
-  metricId: LabChartMetricId,
-  prior = false,
-): number | null {
-  if (prior) {
-    const v =
-      metricId === "distanceKm"
-        ? day.distanceKmPrior
-        : metricId === "movingTimeSec"
-          ? day.movingTimeSecPrior
-          : day.elevationMPrior;
-    return v == null || !Number.isFinite(v) ? null : v;
-  }
-  const v = day[metricId];
-  return v == null || !Number.isFinite(v) ? null : v;
 }

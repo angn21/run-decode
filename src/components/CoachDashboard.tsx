@@ -41,6 +41,22 @@ export function CoachDashboard({ stats }: { stats: CoachStats }) {
           value={stats.avgHrLast30 != null ? `${stats.avgHrLast30} bpm` : "—"}
           sub={`${stats.runsLast30} runs`}
         />
+        <StatCard
+          label="Elevation (week)"
+          value={stats.thisWeekElevM > 0 ? `${stats.thisWeekElevM} m` : "—"}
+          sub={`${formatPercent(stats.elevChange)} vs last (${stats.lastWeekElevM} m)`}
+        />
+        <StatCard
+          label="Relative effort"
+          value={
+            stats.thisWeekSuffer != null ? String(stats.thisWeekSuffer) : "—"
+          }
+          sub={
+            stats.sufferChange != null
+              ? `${formatPercent(stats.sufferChange)} vs last week`
+              : "Strava suffer score sum"
+          }
+        />
       </div>
 
       <div className="space-y-3">

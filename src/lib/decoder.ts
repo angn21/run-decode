@@ -19,7 +19,7 @@ import {
   type WeatherData,
 } from "./weather";
 
-export const DECODER_VERSION = 4;
+export const DECODER_VERSION = 5;
 
 export type PaceInsight = {
   icon: string;
@@ -91,6 +91,26 @@ function computeHrDrift(
   if (!hrFirst || !hrSecond) return null;
 
   return hrSecond - hrFirst;
+}
+
+/** Mean cadence (spm) first 2/3 vs last 1/3; positive = fade (drop). */
+export function computeCadenceFade(
+  streams: StravaStreams | null | undefined,
+): number | null {
+  const raw = streams?.cadence?.data as number[] | undefined;
+  if (!raw || raw.length < 30) return null;
+
+  const toSpm = (c: number) => (c > 0 && c < 120 ? c * 2 : c);
+  const vals = raw.map(toSpm).filter((c) => c >= 120 && c <= 220);
+  if (vals.length < 30) return null;
+
+  const split = Math.floor((vals.length * 2) / 3);
+  const first = vals.slice(0, split);
+  const last = vals.slice(split);
+  if (first.length === 0 || last.length === 0) return null;
+
+  const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
+  return mean(first) - mean(last);
 }
 
 function buildDecodeContext(
@@ -215,6 +235,25 @@ export async function decodeActivity(
           : "Comfortable effort zone for an easy run.",
       tone: "neutral",
     });
+  }
+
+  const cadenceFade = computeCadenceFade(streams);
+  if (cadenceFade != null) {
+    if (cadenceFade >= 4) {
+      insights.push({
+        icon: "🦵",
+        title: `Cadence faded ${cadenceFade.toFixed(0)} spm`,
+        body: "Stride rate dropped in the last third — form fatigue. Shorten stride or ease off next time rather than forcing pace.",
+        tone: "caution",
+      });
+    } else if (cadenceFade <= -3) {
+      insights.push({
+        icon: "🦵",
+        title: "Cadence held up",
+        body: `Stride rate was ${Math.abs(cadenceFade).toFixed(0)} spm higher late — strong form finish.`,
+        tone: "positive",
+      });
+    }
   }
 
   const pace = speedToPace(activity.average_speed);

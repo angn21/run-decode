@@ -1,6 +1,17 @@
 import type { DecodeResult } from "@/lib/decoder";
+import type { StravaStreams } from "@/lib/strava";
+import { ActivityStreamsChart } from "@/components/ActivityStreamsChart";
+import { ActivityRouteMap } from "@/components/ActivityRouteMap";
 
-export function PaceDecoderView({ result }: { result: DecodeResult }) {
+export function PaceDecoderView({
+  result,
+  streams,
+  polyline,
+}: {
+  result: DecodeResult;
+  streams?: StravaStreams | null;
+  polyline?: string | null;
+}) {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-teal-500/30 bg-gradient-to-br from-teal-500/10 to-transparent p-6">
@@ -21,6 +32,21 @@ export function PaceDecoderView({ result }: { result: DecodeResult }) {
           </ul>
         )}
       </div>
+
+      {(streams || polyline) && (
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Run profile
+            </p>
+            <h2 className="text-lg font-semibold text-white">
+              Pace, HR & elevation
+            </h2>
+          </div>
+          <ActivityStreamsChart streams={streams ?? null} />
+          <ActivityRouteMap polyline={polyline} />
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {result.insights.map((insight, i) => (

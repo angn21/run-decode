@@ -6,11 +6,12 @@ import { LogoutButton } from "@/components/LogoutButton";
 import { CoachDashboard } from "@/components/CoachDashboard";
 import { ActivityList } from "@/components/ActivityList";
 import { getCurrentAthlete } from "@/lib/session";
-import { getActivitiesForAthlete } from "@/lib/strava";
+import { getActivitiesForAthlete, getGearsForAthlete } from "@/lib/strava";
 import { computeCoachStats } from "@/lib/coach";
 import type { ActivityRow } from "@/lib/db";
 import { isProductionDbConfigured } from "@/lib/db-config";
 import { TursoSetupPrompt } from "@/components/TursoSetupPrompt";
+import { ShoesCard } from "@/components/ShoesCard";
 
 export default async function HomePage({
   searchParams,
@@ -40,6 +41,7 @@ export default async function HomePage({
       )) as ActivityRow[])
     : [];
   const coachStats = computeCoachStats(activities);
+  const gears = athlete ? await getGearsForAthlete(athlete.id) : [];
 
   const athleteName = athlete
     ? `${athlete.firstname ?? ""} ${athlete.lastname ?? ""}`.trim()
@@ -151,6 +153,8 @@ export default async function HomePage({
             </div>
 
             <CoachDashboard stats={coachStats} />
+
+            <ShoesCard gears={gears} />
 
             <section>
               <div className="mb-4 flex items-center justify-between">

@@ -72,9 +72,23 @@ async function initSchema(database: Client): Promise<void> {
       summary_polyline TEXT,
       start_latlng TEXT,
       suffer_score REAL,
+      gear_id TEXT,
       raw_json TEXT,
       streams_json TEXT,
       insights_json TEXT,
+      FOREIGN KEY (athlete_id) REFERENCES athletes(id)
+    )`,
+      `CREATE TABLE IF NOT EXISTS gears (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      athlete_id INTEGER NOT NULL,
+      strava_gear_id TEXT NOT NULL,
+      name TEXT,
+      distance_m REAL DEFAULT 0,
+      brand_name TEXT,
+      model_name TEXT,
+      retired INTEGER DEFAULT 0,
+      updated_at INTEGER,
+      UNIQUE(athlete_id, strava_gear_id),
       FOREIGN KEY (athlete_id) REFERENCES athletes(id)
     )`,
       `CREATE INDEX IF NOT EXISTS idx_activities_athlete_date
@@ -82,6 +96,15 @@ async function initSchema(database: Client): Promise<void> {
     ],
     "write",
   );
+
+  // Existing DBs created before gear_id
+  try {
+    await database.execute(
+      "ALTER TABLE activities ADD COLUMN gear_id TEXT",
+    );
+  } catch {
+    /* column already exists */
+  }
 }
 
 function rowToRecord<T>(row: Record<string, unknown>): T {
@@ -161,7 +184,20 @@ export type ActivityRow = {
   summary_polyline: string | null;
   start_latlng: string | null;
   suffer_score: number | null;
+  gear_id: string | null;
   raw_json: string | null;
   streams_json: string | null;
   insights_json: string | null;
+};
+
+export type GearRow = {
+  id: number;
+  athlete_id: number;
+  strava_gear_id: string;
+  name: string | null;
+  distance_m: number;
+  brand_name: string | null;
+  model_name: string | null;
+  retired: number;
+  updated_at: number | null;
 };

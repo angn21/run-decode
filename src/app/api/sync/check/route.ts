@@ -6,6 +6,7 @@ import {
   fetchLatestStravaRun,
   getActivityForAthlete,
   seedAthleteFromEnv,
+  syncAthleteGears,
   syncNewActivities,
   touchAthleteSynced,
 } from "@/lib/strava";
@@ -106,6 +107,9 @@ export async function POST(request: NextRequest) {
 
     if (latestInDb) {
       await touchAthleteSynced(athlete.id);
+      if (force) {
+        await syncAthleteGears(athlete);
+      }
       // If latest exists but still needs streams (e.g. sync without analyze), finish it
       if (!latestInDb.streams_json) {
         const { analyzed, insightsSaved, remaining } = await analyzeActivities(
