@@ -4,6 +4,7 @@ import { LabView } from "@/components/LabView";
 import { getCurrentAthlete } from "@/lib/session";
 import { fetchAthleteHrZones, getActivitiesForAthlete } from "@/lib/strava";
 import { computeLabStats, parseLabPeriod } from "@/lib/lab";
+import { buildLabChartData } from "@/lib/lab-chart";
 import type { ActivityRow } from "@/lib/db";
 import { isProductionDbConfigured } from "@/lib/db-config";
 import { TursoSetupPrompt } from "@/components/TursoSetupPrompt";
@@ -34,6 +35,7 @@ export default async function LabPage({
 
   const stravaHrZones = athlete ? await fetchAthleteHrZones(athlete) : null;
   const stats = computeLabStats(activities, period, stravaHrZones);
+  const chartData = buildLabChartData(activities, period);
   const athleteName = athlete
     ? `${athlete.firstname ?? ""} ${athlete.lastname ?? ""}`.trim()
     : null;
@@ -63,6 +65,7 @@ export default async function LabPage({
             stats={stats}
             period={period}
             athleteName={athleteName}
+            chartData={chartData}
             allActivities={activities.map((a) => ({
               streams_json: a.streams_json,
             }))}

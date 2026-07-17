@@ -9,19 +9,23 @@ import {
   type LabPreset,
   type LabStats,
 } from "@/lib/lab";
+import type { LabChartData } from "@/lib/lab-chart";
 import { formatPercent } from "@/lib/format";
 import { countStreamsCoverage } from "@/lib/km-split";
+import { LabChart } from "@/components/LabChart";
 
 export function LabView({
   stats,
   period,
   athleteName,
   allActivities,
+  chartData,
 }: {
   stats: LabStats;
   period: LabPeriod;
   athleteName?: string | null;
   allActivities: { streams_json: string | null }[];
+  chartData: LabChartData;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -221,6 +225,8 @@ export function LabView({
           </button>
         </div>
       </div>
+
+      <LabChart data={chartData} />
 
       {needsBackfill && (
         <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
