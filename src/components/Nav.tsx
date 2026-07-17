@@ -8,6 +8,7 @@ export function Nav({ athleteName }: { athleteName?: string | null }) {
 
   const links = [
     { href: "/", label: "Dashboard" },
+    { href: "/lab", label: "Lab" },
     { href: "/wrapped", label: "Wrapped" },
   ];
 
@@ -25,7 +26,8 @@ export function Nav({ athleteName }: { athleteName?: string | null }) {
               key={link.href}
               href={link.href}
               className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                pathname === link.href
+                pathname === link.href ||
+                (link.href !== "/" && pathname.startsWith(link.href))
                   ? "bg-white/10 text-white"
                   : "text-zinc-400 hover:text-white"
               }`}

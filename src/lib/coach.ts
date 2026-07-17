@@ -6,6 +6,7 @@ import {
   percentChange,
   speedToPace,
 } from "./format";
+import { classifyRun, rollingAvgSpeed } from "./run-classify";
 import { weekIntervalUtc } from "./timezone";
 
 export type CoachInsight = {
@@ -41,19 +42,6 @@ function runsInWeek(activities: ActivityRow[], weeksAgo: number) {
 
 function weekKm(runs: ActivityRow[]) {
   return runs.reduce((sum, r) => sum + r.distance, 0) / 1000;
-}
-
-function classifyRun(
-  activity: ActivityRow,
-  rollingAvgSpeed: number,
-): "easy" | "hard" {
-  if (activity.average_heartrate && activity.average_heartrate > 155) {
-    return "hard";
-  }
-  if (rollingAvgSpeed > 0 && activity.average_speed) {
-    return activity.average_speed > rollingAvgSpeed * 1.05 ? "hard" : "easy";
-  }
-  return "easy";
 }
 
 function computeWeeklyStreak(activities: ActivityRow[]): number {
@@ -220,16 +208,12 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
     lastWeekKm > 0 && thisWeekKm > lastWeekKm * 1.1;
 
   const recent = activities.slice(0, 20);
-  const speeds = recent
-    .map((a) => a.average_speed)
-    .filter((s): s is number => !!s && s > 0);
-  const rollingAvgSpeed =
-    speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+  const rollingAvg = rollingAvgSpeed(recent);
 
   let easyCount = 0;
   let hardCount = 0;
   for (const run of thisWeek) {
-    const cls = classifyRun(run, rollingAvgSpeed);
+    const cls = classifyRun(run, rollingAvg);
     if (cls === "easy") easyCount++;
     else hardCount++;
   }

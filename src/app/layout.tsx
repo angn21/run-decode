@@ -17,7 +17,6 @@ export const metadata: Metadata = {
   title: "Run Decode",
   description:
     "Decode your runs, build safe habits, and wrap your week — powered by Strava.",
-  icons: { icon: "/icon.png", apple: "/icon.png" },
 };
 
 export default function RootLayout({
