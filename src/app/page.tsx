@@ -38,43 +38,6 @@ export default async function HomePage({
         COACH_HISTORY_LIMIT,
       )) as ActivityRow[])
     : [];
-  // #region agent log
-  if (athlete) {
-    const { dbGet } = await import("@/lib/db");
-    const totalRow = await dbGet<{ n: number }>(
-      `SELECT COUNT(*) as n FROM activities WHERE athlete_id = ? AND (type = 'Run' OR sport_type = 'Run')`,
-      [athlete.id],
-    );
-    const oldestRow = await dbGet<{ start_date: string; distance: number }>(
-      `SELECT start_date, distance FROM activities WHERE athlete_id = ? AND (type = 'Run' OR sport_type = 'Run') AND distance >= 4800 ORDER BY start_date ASC LIMIT 1`,
-      [athlete.id],
-    );
-    fetch("http://127.0.0.1:7701/ingest/f2c265a6-137d-495f-9ecf-e98360205356", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "9efdf0",
-      },
-      body: JSON.stringify({
-        sessionId: "9efdf0",
-        runId: "post-fix",
-        hypothesisId: "A,B,C",
-        location: "page.tsx:HomePage",
-        message: "activity load vs full history",
-        data: {
-          loadedCount: activities.length,
-          loadLimit: COACH_HISTORY_LIMIT,
-          dbTotalRuns: totalRow?.n ?? null,
-          oldestInLoaded: activities[activities.length - 1]?.start_date ?? null,
-          newestInLoaded: activities[0]?.start_date ?? null,
-          trueFirst5kInDb: oldestRow?.start_date ?? null,
-          trueFirst5kDistance: oldestRow?.distance ?? null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
   const coachStats = computeCoachStats(activities);
 
   const athleteName = athlete

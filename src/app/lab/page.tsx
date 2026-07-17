@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { LabView } from "@/components/LabView";
 import { getCurrentAthlete } from "@/lib/session";
-import { getActivitiesForAthlete } from "@/lib/strava";
+import { fetchAthleteHrZones, getActivitiesForAthlete } from "@/lib/strava";
 import { computeLabStats, parseLabPeriod } from "@/lib/lab";
 import type { ActivityRow } from "@/lib/db";
 import { isProductionDbConfigured } from "@/lib/db-config";
@@ -32,7 +32,8 @@ export default async function LabPage({
     ? ((await getActivitiesForAthlete(athlete.id, 1000)) as ActivityRow[])
     : [];
 
-  const stats = computeLabStats(activities, period);
+  const stravaHrZones = athlete ? await fetchAthleteHrZones(athlete) : null;
+  const stats = computeLabStats(activities, period, stravaHrZones);
   const athleteName = athlete
     ? `${athlete.firstname ?? ""} ${athlete.lastname ?? ""}`.trim()
     : null;

@@ -259,6 +259,28 @@ export async function fetchActivityStreams(
   );
 }
 
+export type StravaHrZoneRange = { min: number; max: number };
+
+/** Athlete HR zones from Strava (requires profile:read_all). */
+export async function fetchAthleteHrZones(
+  athlete: AthleteRow,
+): Promise<StravaHrZoneRange[] | null> {
+  try {
+    const data = await stravaFetch<{
+      heart_rate?: {
+        custom_zones?: boolean;
+        zones?: StravaHrZoneRange[];
+      };
+    }>(athlete, "/athlete/zones");
+    const zones = data.heart_rate?.zones;
+    if (!zones || zones.length === 0) return null;
+    return zones;
+  } catch (e) {
+    console.error("fetchAthleteHrZones failed:", e);
+    return null;
+  }
+}
+
 export async function saveActivity(
   athleteId: number,
   activity: StravaActivity,

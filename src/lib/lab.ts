@@ -10,7 +10,7 @@ import {
   subMonths,
   isWithinInterval,
 } from "date-fns";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
+import { fromZonedTime, formatInTimeZone, toZonedTime } from "date-fns-tz";
 import type { ActivityRow } from "./db";
 import {
   formatPercent,
@@ -19,8 +19,10 @@ import {
   speedToPace,
 } from "./format";
 import { findFastestKmSplit, type FastestKmSplit } from "./km-split";
+import { computeHrZones, type HrZoneRange, type HrZoneStat } from "./hr-zones";
 import { classifyRun, rollingAvgSpeed } from "./run-classify";
 import {
+  formatInRunTimezone,
   getRunDecodeTimezone,
   monthIntervalUtc,
   weekIntervalUtc,
@@ -55,10 +57,20 @@ export type LabPeriod =
 
 export type LabStats = {
   periodLabel: string;
+  /** Concrete dates for the selected window, e.g. "Jun 17 – Jul 16, 2026". */
+  periodRangeLabel: string | null;
   runCount: number;
   totalKm: number;
   totalTime: number;
   totalTimeLabel: string;
+  elapsedTime: number;
+  elapsedTimeLabel: string;
+  totalCalories: number | null;
+  totalElevationM: number;
+  totalSuffer: number | null;
+  longestRunKm: number | null;
+  longestRunName: string | null;
+  longestRunDate: string | null;
   avgPace: string;
   avgHr: number | null;
   maxHr: number | null;
@@ -71,7 +83,13 @@ export type LabStats = {
   easyHardDetail: string;
   vsPrior: number | null;
   vsPriorLabel: string;
+  /** Human-readable prior window, e.g. "Jun 1 – Jun 30, 2026". */
+  priorPeriodLabel: string | null;
+  priorKm: number | null;
   fastestKm: FastestKmSplit | null;
+  hrZones: HrZoneStat[];
+  hrZonesSummary: string;
+  hrZonesSource: "strava" | "none";
   streamsWithData: number;
   streamsTotal: number;
 };
@@ -172,6 +190,18 @@ function priorInterval(
   return { start: priorStart, end: priorEnd };
 }
 
+function formatPeriodRangeLabel(start: Date, end: Date): string {
+  const tz = getRunDecodeTimezone();
+  const startLabel = formatInTimeZone(start, tz, "MMM d");
+  const endLabel = formatInTimeZone(end, tz, "MMM d, yyyy");
+  const startYear = formatInTimeZone(start, tz, "yyyy");
+  const endYear = formatInTimeZone(end, tz, "yyyy");
+  if (startYear !== endYear) {
+    return `${formatInTimeZone(start, tz, "MMM d, yyyy")} – ${endLabel}`;
+  }
+  return `${startLabel} – ${endLabel}`;
+}
+
 export function parseLabPeriod(searchParams: {
   preset?: string;
   from?: string;
@@ -194,12 +224,66 @@ export function parseLabPeriod(searchParams: {
 export function computeLabStats(
   activities: ActivityRow[],
   period: LabPeriod,
+  stravaHrZones: HrZoneRange[] | null = null,
 ): LabStats {
   const { start, end, label } = resolveLabInterval(period);
+  const periodRangeLabel =
+    start && end ? formatPeriodRangeLabel(start, end) : null;
   const runs = filterInInterval(activities, start, end);
 
   const totalKm = runs.reduce((s, r) => s + r.distance, 0) / 1000;
   const totalTime = runs.reduce((s, r) => s + r.moving_time, 0);
+  const elapsedTime = runs.reduce((s, r) => s + (r.elapsed_time || 0), 0);
+
+  let caloriesSum = 0;
+  let caloriesFound = 0;
+  for (const r of runs) {
+    if (!r.raw_json) continue;
+    try {
+      const raw = JSON.parse(r.raw_json) as {
+        calories?: number;
+        kilojoules?: number;
+      };
+      // Strava list payloads often omit `calories` but include `kilojoules`
+      // (watch energy estimate — treat as kcal when calories is absent).
+      if (typeof raw.calories === "number" && raw.calories > 0) {
+        caloriesSum += raw.calories;
+        caloriesFound++;
+      } else if (typeof raw.kilojoules === "number" && raw.kilojoules > 0) {
+        caloriesSum += raw.kilojoules;
+        caloriesFound++;
+      }
+    } catch {
+      /* ignore bad json */
+    }
+  }
+  const totalCalories = caloriesFound > 0 ? Math.round(caloriesSum) : null;
+
+  const totalElevationM = Math.round(
+    runs.reduce((s, r) => s + (r.total_elevation_gain || 0), 0),
+  );
+
+  const sufferValues = runs
+    .map((r) => r.suffer_score)
+    .filter((s): s is number => s != null && s > 0);
+  const totalSuffer =
+    sufferValues.length > 0
+      ? Math.round(sufferValues.reduce((a, b) => a + b, 0))
+      : null;
+
+  let longest: ActivityRow | null = null;
+  for (const r of runs) {
+    if (!longest || r.distance > longest.distance) longest = r;
+  }
+  const longestRunKm =
+    longest && longest.distance >= 1000
+      ? Math.round((longest.distance / 1000) * 10) / 10
+      : null;
+  const longestRunName = longestRunKm != null ? longest?.name ?? null : null;
+  const longestRunDate =
+    longestRunKm != null && longest?.start_date
+      ? formatInRunTimezone(longest.start_date, "MMM d, yyyy")
+      : null;
 
   const speeds = runs
     .map((r) => r.average_speed)
@@ -251,22 +335,39 @@ export function computeLabStats(
     totalEH > 0 ? `${easyCount} easy · ${hardCount} hard` : "—";
 
   let vsPrior: number | null = null;
+  let priorPeriodLabel: string | null = null;
+  let priorKm: number | null = null;
   if (start && end) {
     const prior = priorInterval(start, end);
     const priorRuns = filterInInterval(activities, prior.start, prior.end);
-    const priorKm = priorRuns.reduce((s, r) => s + r.distance, 0) / 1000;
+    priorKm = priorRuns.reduce((s, r) => s + r.distance, 0) / 1000;
     vsPrior = percentChange(totalKm, priorKm);
+    priorPeriodLabel = formatPeriodRangeLabel(prior.start, prior.end);
   }
 
   const fastestKm = findFastestKmSplit(runs);
   const streamsWithData = runs.filter((a) => !!a.streams_json).length;
+  const {
+    zones: hrZones,
+    summary: hrZonesSummary,
+    source: hrZonesSource,
+  } = computeHrZones(runs, stravaHrZones);
 
   return {
     periodLabel: label,
+    periodRangeLabel,
     runCount: runs.length,
     totalKm,
     totalTime,
     totalTimeLabel: secondsToDuration(totalTime),
+    elapsedTime,
+    elapsedTimeLabel: secondsToDuration(elapsedTime),
+    totalCalories,
+    totalElevationM,
+    totalSuffer,
+    longestRunKm,
+    longestRunName,
+    longestRunDate,
     avgPace: avgSpeed > 0 ? speedToPace(avgSpeed) : "—",
     avgHr,
     maxHr,
@@ -279,7 +380,12 @@ export function computeLabStats(
     easyHardDetail,
     vsPrior,
     vsPriorLabel: formatPercent(vsPrior),
+    priorPeriodLabel,
+    priorKm,
     fastestKm,
+    hrZones,
+    hrZonesSummary,
+    hrZonesSource,
     streamsWithData,
     streamsTotal: runs.length,
   };

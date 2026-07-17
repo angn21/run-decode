@@ -6,6 +6,7 @@ export type FastestKmSplit = {
   pace: string;
   seconds: number;
   runName: string | null;
+  startDate: string | null;
   stravaId: number;
 };
 
@@ -61,6 +62,7 @@ export function findFastestKmSplit(
         pace: secondsToPace(seconds),
         seconds,
         runName: activity.name,
+        startDate: activity.start_date,
         stravaId: activity.strava_id,
       };
     }

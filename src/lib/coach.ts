@@ -46,46 +46,11 @@ function weekKm(runs: ActivityRow[]) {
 
 function computeWeeklyStreak(activities: ActivityRow[]): number {
   let streak = 0;
-  // #region agent log
-  const weekDebug: { w: number; count: number; start: string; end: string }[] = [];
-  // #endregion
   for (let w = 0; w < 52; w++) {
-    const interval = weekIntervalUtc(w);
     const runs = runsInWeek(activities, w);
-    // #region agent log
-    weekDebug.push({
-      w,
-      count: runs.length,
-      start: interval.start.toISOString(),
-      end: interval.end.toISOString(),
-    });
-    // #endregion
     if (runs.length >= 2) streak++;
     else break;
   }
-  // #region agent log
-  fetch("http://127.0.0.1:7701/ingest/f2c265a6-137d-495f-9ecf-e98360205356", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "9efdf0",
-    },
-    body: JSON.stringify({
-      sessionId: "9efdf0",
-      runId: "post-fix",
-      hypothesisId: "B,D",
-      location: "coach.ts:computeWeeklyStreak",
-      message: "streak week walk",
-      data: {
-        streak,
-        activityCount: activities.length,
-        weeksChecked: weekDebug.slice(0, streak + 2),
-        breakWeek: weekDebug[streak] ?? null,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   return streak;
 }
 
@@ -114,32 +79,6 @@ function detectMilestones(activities: ActivityRow[]): string[] {
     milestones.push("Sub-30 5K unlocked");
   }
 
-  // #region agent log
-  fetch("http://127.0.0.1:7701/ingest/f2c265a6-137d-495f-9ecf-e98360205356", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "9efdf0",
-    },
-    body: JSON.stringify({
-      sessionId: "9efdf0",
-      runId: "post-fix",
-      hypothesisId: "A,E",
-      location: "coach.ts:detectMilestones",
-      message: "milestone window",
-      data: {
-        activityCount: activities.length,
-        oldestInWindow: sorted[0]?.start_date ?? null,
-        newestInWindow: sorted[sorted.length - 1]?.start_date ?? null,
-        longestKm: longest ? longest.distance / 1000 : null,
-        streak,
-        milestones,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   return milestones.slice(0, 4);
 }
 
@@ -164,31 +103,6 @@ function last30DayStats(activities: ActivityRow[]): {
     .filter((h): h is number => !!h && h > 0);
   const avgHr =
     hrs.length > 0 ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : null;
-
-  // #region agent log
-  fetch("http://127.0.0.1:7701/ingest/f2c265a6-137d-495f-9ecf-e98360205356", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "9efdf0",
-    },
-    body: JSON.stringify({
-      sessionId: "9efdf0",
-      runId: "post-fix",
-      hypothesisId: "fix-30d",
-      location: "coach.ts:last30DayStats",
-      message: "30-day averages",
-      data: {
-        runsLast30: recent.length,
-        avgSpeed,
-        avgPace: avgSpeed > 0 ? speedToPace(avgSpeed) : "—",
-        avgHr,
-        cutoff: cutoff.toISOString(),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 
   return {
     avgPaceLast30: avgSpeed > 0 ? speedToPace(avgSpeed) : "—",

@@ -182,6 +182,15 @@ export function LabView({
             </button>
           ))}
         </div>
+        {stats.periodRangeLabel && (
+          <p className="mt-2 text-sm text-zinc-400">
+            Showing{" "}
+            <span className="text-zinc-200">{stats.periodRangeLabel}</span>
+            {period.kind === "preset" ? (
+              <span className="text-zinc-500"> · {stats.periodLabel}</span>
+            ) : null}
+          </p>
+        )}
 
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="text-sm text-zinc-400">
@@ -238,7 +247,41 @@ export function LabView({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label="Distance" value={`${stats.totalKm.toFixed(1)} km`} />
         <StatCard label="Runs" value={String(stats.runCount)} />
-        <StatCard label="Time" value={stats.totalTimeLabel} />
+        <StatCard
+          label="Moving time"
+          value={stats.totalTimeLabel}
+        />
+        <StatCard
+          label="Elapsed"
+          value={stats.elapsedTimeLabel}
+          sub="includes pauses"
+        />
+        <StatCard
+          label="Calories"
+          value={
+            stats.totalCalories != null
+              ? `${stats.totalCalories.toLocaleString()} kcal`
+              : "—"
+          }
+        />
+        <StatCard
+          label="Elevation"
+          value={
+            stats.totalElevationM > 0 ? `${stats.totalElevationM} m` : "—"
+          }
+        />
+        <StatCard
+          label="Relative effort"
+          value={stats.totalSuffer != null ? String(stats.totalSuffer) : "—"}
+          sub="Strava suffer score"
+        />
+        <StatCard
+          label="Longest run"
+          value={
+            stats.longestRunKm != null ? `${stats.longestRunKm} km` : "—"
+          }
+          sub={formatNameDate(stats.longestRunName, stats.longestRunDate)}
+        />
         <StatCard label="Avg pace" value={stats.avgPace} />
         <StatCard
           label="Avg HR"
@@ -260,13 +303,85 @@ export function LabView({
         <StatCard
           label="vs prior period"
           value={formatPercent(stats.vsPrior)}
+          sub={
+            stats.priorPeriodLabel
+              ? `vs ${stats.priorKm != null ? `${stats.priorKm.toFixed(1)} km · ` : ""}${stats.priorPeriodLabel}`
+              : undefined
+          }
         />
         <StatCard
           label="Fastest km"
           value={stats.fastestKm?.pace ?? "—"}
-          sub={stats.fastestKm?.runName ?? undefined}
+          sub={formatNameDate(
+            stats.fastestKm?.runName ?? null,
+            stats.fastestKm?.startDate
+              ? formatLabDate(stats.fastestKm.startDate)
+              : null,
+          )}
         />
       </div>
+
+      {stats.hrZones.length > 0 ? (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs uppercase tracking-wider text-zinc-500">
+            Heart rate zones
+          </p>
+          <p className="mt-1 text-sm text-zinc-400">
+            {stats.hrZonesSource === "strava"
+              ? "Using your Strava zone thresholds"
+              : "Couldn’t load Strava zones"}
+            {stats.hrZonesSummary !== "—"
+              ? ` · ${stats.hrZonesSummary}`
+              : ""}
+          </p>
+          <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-white/5">
+            {stats.hrZones.map((z) =>
+              z.percent > 0 ? (
+                <div
+                  key={z.zone}
+                  title={`${z.label}: ${z.minBpm}–${z.maxBpm ?? "∞"} bpm · ${z.percent}%`}
+                  className="h-full first:rounded-l-full last:rounded-r-full"
+                  style={{
+                    width: `${z.percent}%`,
+                    backgroundColor: ZONE_COLORS[z.zone - 1],
+                  }}
+                />
+              ) : null,
+            )}
+          </div>
+          <div className="mt-3 flex w-full">
+            {stats.hrZones.map((z) =>
+              z.percent > 0 ? (
+                <div
+                  key={z.zone}
+                  className="min-w-0 overflow-hidden px-0.5 text-center"
+                  style={{ width: `${z.percent}%` }}
+                >
+                  <p
+                    className="truncate text-xs font-medium"
+                    style={{
+                      color: ZONE_COLORS[(z.zone - 1) % ZONE_COLORS.length],
+                    }}
+                  >
+                    {z.label}
+                  </p>
+                  <p className="truncate text-sm text-white">{z.percent}%</p>
+                  <p className="truncate text-[10px] text-zinc-600">
+                    {z.minBpm}
+                    {z.maxBpm != null ? `–${z.maxBpm}` : "+"}
+                  </p>
+                </div>
+              ) : null,
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-500">
+          {stats.hrZonesSource === "none"
+            ? "Couldn’t load Strava HR zones — reconnect Strava with profile access, or check zone settings on Strava."
+            : "Heart rate zones need stream data — use Load split data above."}
+        </div>
+      )}
 
       <div>
         <p className="mb-3 text-xs uppercase tracking-wider text-zinc-500">
@@ -279,6 +394,9 @@ export function LabView({
           <p className="text-xs uppercase tracking-widest text-[#fc4c02]">
             Run Decode Lab · {stats.periodLabel}
           </p>
+          {stats.periodRangeLabel && (
+            <p className="mt-1 text-xs text-zinc-500">{stats.periodRangeLabel}</p>
+          )}
           {athleteName && (
             <p className="mt-1 text-sm text-zinc-500">{athleteName}</p>
           )}
@@ -286,8 +404,12 @@ export function LabView({
             {stats.runCount} runs · {stats.totalKm.toFixed(1)} km
           </h2>
           <p className="mt-1 text-zinc-400">
-            {stats.totalTimeLabel}
-            {stats.vsPrior != null ? ` · ${stats.vsPriorLabel} vs prior` : ""}
+            {stats.totalTimeLabel} moving · {stats.elapsedTimeLabel} elapsed
+            {stats.vsPrior != null && stats.priorPeriodLabel
+              ? ` · ${stats.vsPriorLabel} vs prior (${stats.priorPeriodLabel})`
+              : stats.vsPrior != null
+                ? ` · ${stats.vsPriorLabel} vs prior`
+                : ""}
           </p>
 
           <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-3">
@@ -297,8 +419,32 @@ export function LabView({
               value={stats.avgHr != null ? `${stats.avgHr} bpm` : "—"}
             />
             <MiniStat
-              label="Max HR"
-              value={stats.maxHr != null ? `${stats.maxHr} bpm` : "—"}
+              label="Calories"
+              value={
+                stats.totalCalories != null
+                  ? `${stats.totalCalories.toLocaleString()}`
+                  : "—"
+              }
+            />
+            <MiniStat
+              label="Elevation"
+              value={
+                stats.totalElevationM > 0 ? `${stats.totalElevationM} m` : "—"
+              }
+            />
+            <MiniStat
+              label="Longest"
+              value={
+                stats.longestRunKm != null ? `${stats.longestRunKm} km` : "—"
+              }
+            />
+            <MiniStat
+              label="Effort"
+              value={stats.totalSuffer != null ? String(stats.totalSuffer) : "—"}
+            />
+            <MiniStat
+              label="HR zones"
+              value={stats.hrZonesSummary}
             />
             <MiniStat
               label="Cadence"
@@ -354,6 +500,37 @@ export function LabView({
     </div>
   );
 }
+
+function formatNameDate(
+  name: string | null | undefined,
+  date: string | null | undefined,
+): string | undefined {
+  if (name && date) return `${name} · ${date}`;
+  if (name) return name;
+  if (date) return date;
+  return undefined;
+}
+
+function formatLabDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+const ZONE_COLORS = [
+  "#5eead4", // Z1 teal
+  "#34d399", // Z2 green
+  "#fbbf24", // Z3 amber
+  "#fb923c", // Z4 orange
+  "#f87171", // Z5 red
+];
 
 function StatCard({
   label,
