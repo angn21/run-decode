@@ -6,6 +6,7 @@ A personal running dashboard powered by the Strava API. Decode your runs, track 
 
 - **Consistency Coach** (`/`) — weekly mileage, 10% rule warnings, easy/hard split, streaks, milestones
 - **Pace Decoder** (`/activities/[id]`) — weather context, HR drift, elevation story, plain-English verdicts
+- **Lab** (`/lab`) — period stats, HR zones, fastest km split, shareable cards
 - **Run Wrapped** (`/wrapped`) — weekly/monthly shareable recap cards with GPS trace art
 
 ## Setup
@@ -26,7 +27,7 @@ Get credentials from [Strava API settings](https://www.strava.com/settings/api).
 | `STRAVA_CLIENT_ID` | Yes | Strava app client ID |
 | `STRAVA_CLIENT_SECRET` | Yes | Strava app client secret |
 | `NEXT_PUBLIC_APP_URL` | Yes | App URL, no trailing slash (default `http://localhost:3000`) |
-| `SESSION_SECRET` | Yes | Random string for session cookies |
+| `SESSION_SECRET` | Yes | Random string for signed session cookies. Changing it signs everyone out. |
 | `RUN_DECODE_TIMEZONE` | Yes | IANA timezone (e.g. `America/Toronto`) — use the same value locally and on Vercel |
 | `STRAVA_ACCESS_TOKEN` | Optional | See quick dev below |
 | `STRAVA_REFRESH_TOKEN` | Optional | See quick dev below |
@@ -66,6 +67,7 @@ run-decode/
 ├── src/
 │   ├── app/                      # Next.js App Router
 │   │   ├── page.tsx              # Dashboard — coach stats + recent runs
+│   │   ├── lab/page.tsx          # Period explorer — stats, zones, splits
 │   │   ├── wrapped/page.tsx      # Weekly / monthly recap cards
 │   │   ├── activities/[id]/      # Per-run pace decoder
 │   │   └── api/
@@ -101,6 +103,7 @@ run-decode/
 | `npm run build` | Production build |
 | `npm run start` | Serve production build |
 | `npm run lint` | Run ESLint |
+| `npm test` | Run unit tests (Vitest) |
 
 ## Deploy to Vercel
 
@@ -146,7 +149,7 @@ Redeploy after adding env vars.
 
 ### Multi-user notes
 
-- Each user connects via OAuth and gets an isolated session cookie.
+- Each user connects via OAuth and gets an isolated, HMAC-signed session cookie (`SESSION_SECRET`). After changing that secret, tap **Connect with Strava** again.
 - Strava limits apps to **10 connected athletes** by default. Remove unused athletes in [Strava API settings](https://www.strava.com/settings/api) if the limit is reached.
 - Use **Logout** on the dashboard to clear your session.
 

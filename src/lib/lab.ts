@@ -12,6 +12,7 @@ import {
 } from "date-fns";
 import { fromZonedTime, formatInTimeZone, toZonedTime } from "date-fns-tz";
 import type { ActivityRow } from "./db";
+import { energyKcalFromStravaRaw } from "./energy";
 import {
   formatPercent,
   percentChange,
@@ -243,24 +244,10 @@ export function computeLabStats(
   let caloriesSum = 0;
   let caloriesFound = 0;
   for (const r of runs) {
-    if (!r.raw_json) continue;
-    try {
-      const raw = JSON.parse(r.raw_json) as {
-        calories?: number;
-        kilojoules?: number;
-      };
-      // Strava list payloads often omit `calories` but include `kilojoules`
-      // (watch energy estimate — treat as kcal when calories is absent).
-      if (typeof raw.calories === "number" && raw.calories > 0) {
-        caloriesSum += raw.calories;
-        caloriesFound++;
-      } else if (typeof raw.kilojoules === "number" && raw.kilojoules > 0) {
-        caloriesSum += raw.kilojoules;
-        caloriesFound++;
-      }
-    } catch {
-      /* ignore bad json */
-    }
+    const kcal = energyKcalFromStravaRaw(r.raw_json);
+    if (kcal == null) continue;
+    caloriesSum += kcal;
+    caloriesFound++;
   }
   const totalCalories = caloriesFound > 0 ? Math.round(caloriesSum) : null;
 

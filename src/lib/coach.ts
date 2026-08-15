@@ -6,6 +6,7 @@ import {
   percentChange,
   speedToPace,
 } from "./format";
+import { isTenPercentMileageJump } from "./mileage";
 import { classifyRun, rollingAvgSpeed } from "./run-classify";
 import { weekIntervalUtc } from "./timezone";
 
@@ -138,8 +139,10 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
   const thisWeekKm = weekKm(thisWeek);
   const lastWeekKm = weekKm(lastWeek);
   const mileageChange = percentChange(thisWeekKm, lastWeekKm);
-  const tenPercentWarning =
-    lastWeekKm > 0 && thisWeekKm > lastWeekKm * 1.1;
+  const priorWeekKms = [1, 2, 3, 4].map((w) =>
+    weekKm(runsInWeek(activities, w)),
+  );
+  const tenPercentWarning = isTenPercentMileageJump(thisWeekKm, priorWeekKms);
 
   const thisWeekElevM = weekElevM(thisWeek);
   const lastWeekElevM = weekElevM(lastWeek);
@@ -172,7 +175,7 @@ export function computeCoachStats(activities: ActivityRow[]): CoachStats {
     insights.push({
       type: "warning",
       title: "Mileage jumped fast",
-      body: `You ran ${thisWeekKm.toFixed(1)} km this week — ${formatPercent(mileageChange)} vs last week. The 10% rule says keep weekly increases under 10% to stay injury-free.`,
+      body: `You ran ${thisWeekKm.toFixed(1)} km this week — ${formatPercent(mileageChange)} vs last week. That's more than 10% above your recent weekly median. Keep most runs easy.`,
     });
   } else if (thisWeekKm > 0 && mileageChange !== null && mileageChange > 0) {
     insights.push({

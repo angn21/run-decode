@@ -11,20 +11,17 @@ import {
 } from "@/lib/lab";
 import type { LabChartData } from "@/lib/lab-chart";
 import { formatPercent } from "@/lib/format";
-import { countStreamsCoverage } from "@/lib/km-split";
 import { LabChart } from "@/components/LabChart";
 
 export function LabView({
   stats,
   period,
   athleteName,
-  allActivities,
   chartData,
 }: {
   stats: LabStats;
   period: LabPeriod;
   athleteName?: string | null;
-  allActivities: { streams_json: string | null }[];
   chartData: LabChartData;
 }) {
   const router = useRouter();
@@ -38,7 +35,10 @@ export function LabView({
     period.kind === "custom" ? period.to : "",
   );
 
-  const coverage = countStreamsCoverage(allActivities);
+  const coverage = {
+    withStreams: stats.streamsWithData,
+    total: stats.streamsTotal,
+  };
   const needsBackfill = coverage.withStreams < coverage.total;
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<string | null>(null);

@@ -30,7 +30,10 @@ export default async function LabPage({
 
   const athlete = await getCurrentAthlete();
   const activities = athlete
-    ? ((await getActivitiesForAthlete(athlete.id, 1000)) as ActivityRow[])
+    ? ((await getActivitiesForAthlete(athlete.id, 1000, {
+        includeStreams: true,
+        includeRaw: true,
+      })) as ActivityRow[])
     : [];
 
   const stravaHrZones = athlete ? await fetchAthleteHrZones(athlete) : null;
@@ -66,9 +69,6 @@ export default async function LabPage({
             period={period}
             athleteName={athleteName}
             chartData={chartData}
-            allActivities={activities.map((a) => ({
-              streams_json: a.streams_json,
-            }))}
           />
         )}
       </main>

@@ -531,9 +531,39 @@ export async function getGearByStravaId(
   );
 }
 
-export async function getActivitiesForAthlete(athleteId: number, limit = 50) {
+export async function getActivitiesForAthlete(
+  athleteId: number,
+  limit = 50,
+  options: { includeStreams?: boolean; includeRaw?: boolean } = {},
+) {
+  const columns = [
+    "id",
+    "strava_id",
+    "athlete_id",
+    "name",
+    "type",
+    "sport_type",
+    "start_date",
+    "distance",
+    "moving_time",
+    "elapsed_time",
+    "total_elevation_gain",
+    "average_speed",
+    "max_speed",
+    "average_heartrate",
+    "max_heartrate",
+    "average_cadence",
+    "summary_polyline",
+    "start_latlng",
+    "suffer_score",
+    "gear_id",
+    "insights_json",
+    options.includeRaw ? "raw_json" : "NULL AS raw_json",
+    options.includeStreams ? "streams_json" : "NULL AS streams_json",
+  ].join(", ");
+
   return dbAll<ActivityRow>(
-    `SELECT * FROM activities WHERE athlete_id = ? AND (type = 'Run' OR sport_type = 'Run')
+    `SELECT ${columns} FROM activities WHERE athlete_id = ? AND (type = 'Run' OR sport_type = 'Run')
      ORDER BY start_date DESC LIMIT ?`,
     [athleteId, limit],
   );
